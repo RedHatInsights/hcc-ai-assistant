@@ -10,7 +10,7 @@ dependencies = [
     "torch==2.5.1",
     "numpy==2.0.2",
     "pydantic>=2.11.0,<3.0.0",  # Aligned with mcp-discovery
-    "chromadb==0.5.23",
+    "chromadb==1.5.5",
     "starlette>=0.37.2,<0.42.0",  # Explicit version range
 ]
 
