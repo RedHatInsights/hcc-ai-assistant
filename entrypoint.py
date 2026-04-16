@@ -2,6 +2,7 @@
 variables and Clowder ACG config, then starts lightspeed-stack behind a
 reverse proxy that strips the /api/ai-assistant path prefix."""
 
+import json
 import os
 import signal
 import subprocess
@@ -25,6 +26,61 @@ def load_clowder_config():
 
     print("[entrypoint] Clowder config loaded")
     return LoadedConfig
+
+
+def load_clowder_mcp_config():
+    """Load MCP server-to-Clowder-endpoint mapping from ConfigMap JSON."""
+    config_path = os.environ.get(
+        "CLOWDER_MCP_CONFIG_PATH", "/opt/config/clowder_mcp_server_configs.json"
+    )
+    if not os.path.exists(config_path):
+        print(f"[entrypoint] No Clowder MCP config at {config_path}, skipping URL resolution")
+        return {}
+
+    with open(config_path) as f:
+        mapping = json.load(f)
+
+    print(f"[entrypoint] Loaded Clowder MCP config: {len(mapping)} server(s)")
+    return mapping
+
+
+def resolve_mcp_urls(stack_config, clowder):
+    """Resolve MCP server URLs from Clowder endpoints using ConfigMap mapping.
+
+    For each MCP server in stack_config["mcp_servers"], looks up the server
+    name in the ConfigMap JSON to find the corresponding Clowder app name and
+    path suffix.  If a matching Clowder endpoint exists, the server URL is
+    replaced with http://{hostname}:{port}{path_suffix}.
+    """
+    if not clowder or not getattr(clowder, "endpoints", None):
+        return
+
+    mcp_config = load_clowder_mcp_config()
+    if not mcp_config:
+        return
+
+    for server in stack_config.get("mcp_servers", []):
+        mapping = mcp_config.get(server["name"])
+        if not mapping:
+            continue
+
+        app_name = mapping["clowder_app"]
+        service_name = mapping.get("clowder_service")
+        path_suffix = mapping.get("path_suffix", "/")
+
+        endpoint = None
+        for ep in clowder.endpoints:
+            if ep.app == app_name:
+                if service_name and ep.name != service_name:
+                    continue
+                endpoint = ep
+                break
+
+        if endpoint:
+            server["url"] = f"http://{endpoint.hostname}:{endpoint.port}{path_suffix}"
+            print(f"[entrypoint] Resolved {server['name']} -> {server['url']}")
+        else:
+            print(f"[entrypoint] No Clowder endpoint for {server['name']} (app={app_name}), keeping existing URL")
 
 
 def apply_clowder_config(run_config, stack_config, clowder):
@@ -87,6 +143,9 @@ def apply_clowder_config(run_config, stack_config, clowder):
         stack_config["database"] = {
             "postgres": pg_config,
         }
+
+    # Resolve MCP server URLs from Clowder endpoints
+    resolve_mcp_urls(stack_config, clowder)
 
     return run_config, stack_config
 

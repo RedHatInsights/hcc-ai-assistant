@@ -10,6 +10,7 @@ objects:
       name: hcc-ai-assistant
     spec:
       envName: ${ENV_NAME}
+      optionalDependencies: ${{OPTIONAL_DEPENDENCIES}}
       database:
         name: hcc-ai-assistant
       featureFlags: true
@@ -185,9 +186,15 @@ objects:
           - name: vertex-api
             secret:
               secretName: vertex-api
+          - name: clowder-mcp-server-configs
+            configMap:
+              name: clowder-mcp-server-configs
           volumeMounts:
           - name: vertex-api
             mountPath: /opt/secrets
+            readOnly: true
+          - name: clowder-mcp-server-configs
+            mountPath: /opt/config
             readOnly: true
           resources:
             limits:
@@ -217,6 +224,14 @@ objects:
             value: ${VERTEX_SECRET_PATH}
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
+          - name: CLOWDER_MCP_CONFIG_PATH
+            value: ${CLOWDER_MCP_CONFIG_PATH}
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: clowder-mcp-server-configs
+    data:
+      clowder_mcp_server_configs.json: ${CLOWDER_MCP_SERVER_CONFIGS}
   # TODO: Re-enable when sidecar services are ready
   # - apiVersion: v1
   #   kind: PersistentVolumeClaim
@@ -266,6 +281,25 @@ parameters:
 - description: ClowdEnv Name
   name: ENV_NAME
   required: true
+- description: Clowder optional dependencies (JSON array of app names)
+  name: OPTIONAL_DEPENDENCIES
+  value: '["rbac", "notifications-mcp"]'
+- description: Path to Clowder MCP server config mapping file
+  name: CLOWDER_MCP_CONFIG_PATH
+  value: /opt/config/clowder_mcp_server_configs.json
+- description: JSON mapping of MCP server names to Clowder endpoint resolution config
+  name: CLOWDER_MCP_SERVER_CONFIGS
+  value: |-
+    {
+      "rbac-mcp-server": {
+        "clowder_app": "rbac",
+        "path_suffix": "/_private/_a2s/mcp/"
+      },
+      "notifications-mcp-server": {
+        "clowder_app": "notifications-mcp",
+        "path_suffix": "/mcp/"
+      }
+    }
 - description: Init container image name
   name: INIT_IMAGE
   value: quay.io/redhat-services-prod/hcc-platex-services/hcc-ai-assistant
