@@ -29,17 +29,13 @@ def load_clowder_config():
 
 
 def load_clowder_mcp_config():
-    """Load MCP server-to-Clowder-endpoint mapping from ConfigMap JSON."""
-    config_path = os.environ.get(
-        "CLOWDER_MCP_CONFIG_PATH", "/opt/config/clowder_mcp_server_configs.json"
-    )
-    if not os.path.exists(config_path):
-        print(f"[entrypoint] No Clowder MCP config at {config_path}, skipping URL resolution")
+    """Load MCP server-to-Clowder-endpoint mapping from env var (injected via ConfigMap)."""
+    raw = os.environ.get("CLOWDER_MCP_SERVER_CONFIGS")
+    if not raw:
+        print("[entrypoint] CLOWDER_MCP_SERVER_CONFIGS not set, skipping URL resolution")
         return {}
 
-    with open(config_path) as f:
-        mapping = json.load(f)
-
+    mapping = json.loads(raw)
     print(f"[entrypoint] Loaded Clowder MCP config: {len(mapping)} server(s)")
     return mapping
 

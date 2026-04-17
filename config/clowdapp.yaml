@@ -186,15 +186,9 @@ objects:
           - name: vertex-api
             secret:
               secretName: vertex-api
-          - name: clowder-mcp-server-configs
-            configMap:
-              name: clowder-mcp-server-configs
           volumeMounts:
           - name: vertex-api
             mountPath: /opt/secrets
-            readOnly: true
-          - name: clowder-mcp-server-configs
-            mountPath: /opt/config
             readOnly: true
           resources:
             limits:
@@ -224,14 +218,12 @@ objects:
             value: ${VERTEX_SECRET_PATH}
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
-          - name: CLOWDER_MCP_CONFIG_PATH
-            value: ${CLOWDER_MCP_CONFIG_PATH}
-  - apiVersion: v1
-    kind: ConfigMap
-    metadata:
-      name: clowder-mcp-server-configs
-    data:
-      clowder_mcp_server_configs.json: ${CLOWDER_MCP_SERVER_CONFIGS}
+          - name: CLOWDER_MCP_SERVER_CONFIGS
+            valueFrom:
+              configMapKeyRef:
+                key: clowder_mcp_server_configs.json
+                name: ${CLOWDER_MCP_SERVER_CONFIGS_NAME}
+                optional: true
   # TODO: Re-enable when sidecar services are ready
   # - apiVersion: v1
   #   kind: PersistentVolumeClaim
@@ -284,22 +276,9 @@ parameters:
 - description: Clowder optional dependencies (JSON array of app names)
   name: OPTIONAL_DEPENDENCIES
   value: '["rbac", "notifications-mcp"]'
-- description: Path to Clowder MCP server config mapping file
-  name: CLOWDER_MCP_CONFIG_PATH
-  value: /opt/config/clowder_mcp_server_configs.json
-- description: JSON mapping of MCP server names to Clowder endpoint resolution config
-  name: CLOWDER_MCP_SERVER_CONFIGS
-  value: |-
-    {
-      "rbac-mcp-server": {
-        "clowder_app": "rbac",
-        "mcp_server_path": "/_private/_a2s/mcp/"
-      },
-      "notifications-mcp-server": {
-        "clowder_app": "notifications-mcp",
-        "mcp_server_path": "/mcp/"
-      }
-    }
+- description: ConfigMap name for MCP server to Clowder endpoint mapping
+  name: CLOWDER_MCP_SERVER_CONFIGS_NAME
+  value: clowder-mcp-server-configs
 - description: Init container image name
   name: INIT_IMAGE
   value: quay.io/redhat-services-prod/hcc-platex-services/hcc-ai-assistant
