@@ -50,7 +50,7 @@ def resolve_mcp_urls(stack_config, clowder):
     For each MCP server in stack_config["mcp_servers"], looks up the server
     name in the ConfigMap JSON to find the corresponding Clowder app name and
     path suffix.  If a matching Clowder endpoint exists, the server URL is
-    replaced with http://{hostname}:{port}{path_suffix}.
+    replaced with http://{hostname}:{port}{mcp_server_path}.
     """
     if not clowder or not getattr(clowder, "endpoints", None):
         return
@@ -66,7 +66,7 @@ def resolve_mcp_urls(stack_config, clowder):
 
         app_name = mapping["clowder_app"]
         service_name = mapping.get("clowder_service")
-        path_suffix = mapping.get("path_suffix", "/")
+        mcp_server_path = mapping.get("mcp_server_path", "/")
 
         endpoint = None
         for ep in clowder.endpoints:
@@ -77,7 +77,7 @@ def resolve_mcp_urls(stack_config, clowder):
                 break
 
         if endpoint:
-            server["url"] = f"http://{endpoint.hostname}:{endpoint.port}{path_suffix}"
+            server["url"] = f"http://{endpoint.hostname}:{endpoint.port}{mcp_server_path}"
             print(f"[entrypoint] Resolved {server['name']} -> {server['url']}")
         else:
             print(f"[entrypoint] No Clowder endpoint for {server['name']} (app={app_name}), keeping existing URL")

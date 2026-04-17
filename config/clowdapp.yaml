@@ -293,11 +293,11 @@ parameters:
     {
       "rbac-mcp-server": {
         "clowder_app": "rbac",
-        "path_suffix": "/_private/_a2s/mcp/"
+        "mcp_server_path": "/_private/_a2s/mcp/"
       },
       "notifications-mcp-server": {
         "clowder_app": "notifications-mcp",
-        "path_suffix": "/mcp/"
+        "mcp_server_path": "/mcp/"
       }
     }
 - description: Init container image name
