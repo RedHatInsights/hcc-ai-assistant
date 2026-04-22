@@ -2,14 +2,33 @@
   version: '3.8'
 
   services:
+    postgres:
+      image: pgvector/pgvector:pg16
+      environment:
+        - POSTGRES_USER=postgres
+        - POSTGRES_PASSWORD=postgres
+        - POSTGRES_DB=hcc-ai-assistant
+      ports:
+        - "5432:5432"
+      volumes:
+        - pgdata:/var/lib/postgresql/data
+      healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U postgres"]
+        interval: 5s
+        timeout: 3s
+        retries: 5
+
     lightspeed-stack:
       build:
         context: .
         dockerfile: Dockerfile
       ports:
-        - "8000:8000"  # Main API
-        - "8001:8001"   # MCP Discovery service (sidecar)
-        - "8002:8002"   # Embedding service (sidecar)
+        - "8000:8000"  # Main API (reverse proxy)
+        - "8001:8001"   # MCP Discovery service (subprocess)
+        - "8002:8002"   # Embedding service (subprocess)
+      depends_on:
+        postgres:
+          condition: service_healthy
       environment:
         - VERTEX_PROJECT=${VERTEX_PROJECT}
         - VERTEX_LOCATION=us-central1
@@ -21,6 +40,16 @@
         - KV_STORE_PATH=/app-root/.llama/storage/rag/kv_store.db
         - SQL_STORE_PATH=/app-root/.llama/storage/sql_store.db
         - STORAGE_DIR=/app-root/.llama/storage/files
+        # DB config for embedding service (pgvector)
+        - PGHOST=postgres
+        - PGPORT=5432
+        - PGDATABASE=hcc-ai-assistant
+        - PGUSER=postgres
+        - PGPASSWORD=postgres
+        # Subprocess service ports
+        - EMBEDDING_SERVICE_PORT=8002
+        - MCP_DISCOVERY_SERVICE_PORT=8001
+        - ENABLE_VECTOR_STORE=true
       # Note: host.containers.internal works automatically in Podman and Docker Desktop
       # Linux Docker users: add --add-host=host.containers.internal:host-gateway when running
       volumes:
@@ -30,60 +59,7 @@
         interval: 10s
         timeout: 5s
         retries: 5
-        start_period: 60s
-
-    embedding-service:
-      build:
-        context: ./embedding-service
-        dockerfile: Dockerfile
-      network_mode: "service:lightspeed-stack"
-      depends_on:
-        - lightspeed-stack
-      restart: on-failure
-      environment:
-        - HOST=0.0.0.0
-        - PORT=8002
-        - LOG_LEVEL=INFO
-      volumes:
-        - chromadb-data:/app/data
-      healthcheck:
-        test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
-        interval: 10s
-        timeout: 5s
-        retries: 5
-        start_period: 20s
-
-    mcp-discovery-service:
-      build:
-        context: ./mcp-discovery-service
-        dockerfile: Dockerfile
-      network_mode: "service:lightspeed-stack"
-      depends_on:
-        - lightspeed-stack
-        - embedding-service
-      restart: on-failure
-      environment:
-        - HOST=0.0.0.0
-        - PORT=8001
-        - LOG_LEVEL=INFO
-        - MCP_CONFIG_PATH=/app-root/lightspeed-stack.yaml
-        - REFRESH_INTERVAL_MINUTES=5
-        - ENABLE_VECTOR_STORE=true
-        # Uses localhost since we share network namespace with lightspeed-stack
-        - EMBEDDING_SERVICE_URL=http://localhost:8002
-        - CAPABILITIES_CACHE_PATH=/app-root/data/mcp-capabilities.json
-        - VECTOR_STORE_ID=mcp-capabilities-store
-        - EMBEDDING_MODEL=sentence-transformers/all-mpnet-base-v2 # nomic-ai/nomic-embed-text-v1.5 requires remote code execution
-      volumes:
-        - ./lightspeed-stack.yaml:/app-root/lightspeed-stack.yaml:ro
-        - mcp-data:/app-root/data
-      healthcheck:
-        test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-        interval: 10s
-        timeout: 5s
-        retries: 5
-        start_period: 30s
+        start_period: 120s
 
   volumes:
-    mcp-data:
-    chromadb-data:
+    pgdata:

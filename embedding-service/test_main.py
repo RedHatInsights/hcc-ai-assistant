@@ -2,11 +2,11 @@
 Tests for Embedding Service
 Uses pytest with modern best practices and fixtures for test setup.
 """
+import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 import numpy as np
 from httpx import AsyncClient, ASGITransport
-from fastapi import FastAPI
 
 
 # ============================================================================
@@ -31,43 +31,39 @@ def mock_sentence_transformer():
 
 
 @pytest.fixture
-def mock_chroma_collection():
-    """Mock ChromaDB collection"""
-    mock_collection = MagicMock()
-    mock_collection.name = "test_collection"
-    mock_collection.count.return_value = 5
-    mock_collection.metadata = {"dimension": 768}
-
-    # Mock query results
-    mock_collection.query.return_value = {
-        'ids': [['doc1', 'doc2']],
-        'distances': [[0.1, 0.2]],
-        'documents': [['test document 1', 'test document 2']],
-        'metadatas': [[
-            {'key': 'value1'},
-            {'key': 'value2'}
-        ]]
-    }
-
-    return mock_collection
+def mock_cursor():
+    """Mock database cursor"""
+    cursor = MagicMock()
+    cursor.fetchone.return_value = (1,)
+    cursor.fetchall.return_value = []
+    cursor.__enter__ = MagicMock(return_value=cursor)
+    cursor.__exit__ = MagicMock(return_value=False)
+    return cursor
 
 
 @pytest.fixture
-def mock_chroma_client(mock_chroma_collection):
-    """Mock ChromaDB client"""
-    mock_client = MagicMock()
-    mock_client.get_or_create_collection.return_value = mock_chroma_collection
-    mock_client.list_collections.return_value = [mock_chroma_collection]
-    return mock_client
+def mock_connection(mock_cursor):
+    """Mock database connection"""
+    conn = MagicMock()
+    conn.cursor.return_value = mock_cursor
+    return conn
 
 
 @pytest.fixture
-async def test_app(mock_sentence_transformer, mock_chroma_client):
+def mock_db_pool(mock_connection):
+    """Mock database connection pool"""
+    pool = MagicMock()
+    pool.getconn.return_value = mock_connection
+    return pool
+
+
+@pytest.fixture
+async def test_app(mock_sentence_transformer, mock_db_pool):
     """Create test FastAPI app with mocked dependencies"""
     with patch('main.SentenceTransformer', return_value=mock_sentence_transformer), \
-         patch('main.chromadb.PersistentClient', return_value=mock_chroma_client):
+         patch('main.psycopg2.pool.ThreadedConnectionPool', return_value=mock_db_pool), \
+         patch('main.register_vector'):
 
-        # Import after patching to ensure mocks are used during app creation
         from main import app
 
         # Manually trigger startup to initialize global variables
@@ -144,7 +140,7 @@ async def test_health_endpoint(client):
     data = response.json()
     assert data["status"] == "healthy"
     assert data["embedding_model_loaded"] is True
-    assert data["chroma_initialized"] is True
+    assert data["pgvector_connected"] is True
     assert data["model"] == "sentence-transformers/all-mpnet-base-v2"
 
 
@@ -156,6 +152,7 @@ async def test_root_endpoint(client):
     data = response.json()
     assert data["service"] == "Embedding Service"
     assert data["version"] == "1.0.0"
+    assert data["vector_backend"] == "pgvector"
     assert "endpoints" in data
 
 
@@ -252,13 +249,23 @@ async def test_insert_vectors_multiple_documents(client):
 # ============================================================================
 
 @pytest.mark.asyncio
-async def test_query_vectors_success(client, sample_insert_request, sample_query_request):
+async def test_query_vectors_success(client, mock_db_pool, mock_connection, mock_cursor):
     """Test successful vector query"""
-    # First insert to create collection
-    await client.post("/v1/vector_io/insert", json=sample_insert_request)
+    # First call: check store exists -> return a row
+    # Second call: cosine distance query -> return results
+    mock_cursor.fetchone.return_value = (1,)
+    mock_cursor.fetchall.return_value = [
+        ("doc1", "test document 1", {"key": "value1"}, 0.2),
+        ("doc2", "test document 2", {"key": "value2"}, 0.4),
+    ]
 
-    # Now query
-    response = await client.post("/v1/vector_io/query", json=sample_query_request)
+    query_data = {
+        "vector_store_id": "test_store",
+        "query": [0.1, 0.2, 0.3],
+        "k": 2
+    }
+
+    response = await client.post("/v1/vector_io/query", json=query_data)
     assert response.status_code == 200
 
     data = response.json()
@@ -268,11 +275,13 @@ async def test_query_vectors_success(client, sample_insert_request, sample_query
 
 
 @pytest.mark.asyncio
-async def test_query_vectors_nonexistent_store(client, sample_embedding):
+async def test_query_vectors_nonexistent_store(client, mock_cursor):
     """Test querying a non-existent vector store"""
+    mock_cursor.fetchone.return_value = None
+
     query_data = {
         "vector_store_id": "nonexistent_store",
-        "query": sample_embedding,
+        "query": [0.1, 0.2, 0.3],
         "k": 10
     }
 
@@ -283,14 +292,14 @@ async def test_query_vectors_nonexistent_store(client, sample_embedding):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("k_value", [1, 5, 10, 20])
-async def test_query_vectors_various_k_values(client, sample_insert_request, sample_embedding, k_value):
+async def test_query_vectors_various_k_values(client, mock_cursor, k_value):
     """Test querying with various k values"""
-    # First insert
-    await client.post("/v1/vector_io/insert", json=sample_insert_request)
+    mock_cursor.fetchone.return_value = (1,)
+    mock_cursor.fetchall.return_value = []
 
     query_data = {
         "vector_store_id": "test_store",
-        "query": sample_embedding,
+        "query": [0.1, 0.2, 0.3],
         "k": k_value
     }
 
@@ -303,26 +312,30 @@ async def test_query_vectors_various_k_values(client, sample_insert_request, sam
 # ============================================================================
 
 @pytest.mark.asyncio
-async def test_list_vector_stores(client):
+async def test_list_vector_stores(client, mock_cursor):
     """Test listing all vector stores"""
+    mock_cursor.fetchall.return_value = [
+        ("store1", 768, "2024-01-01", 5),
+        ("store2", 768, "2024-01-02", 10),
+    ]
+
     response = await client.get("/v1/vector_io/stores")
     assert response.status_code == 200
 
     data = response.json()
     assert "stores" in data
     assert isinstance(data["stores"], list)
+    assert len(data["stores"]) == 2
+    assert data["stores"][0]["id"] == "store1"
+    assert data["stores"][0]["count"] == 5
 
 
 @pytest.mark.asyncio
-async def test_delete_vector_store_success(client, sample_insert_request):
+async def test_delete_vector_store_success(client, mock_cursor):
     """Test successful vector store deletion"""
     store_id = "test_store_to_delete"
-    insert_request = {**sample_insert_request, "vector_store_id": store_id}
+    mock_cursor.fetchone.return_value = (store_id,)
 
-    # First insert to create collection
-    await client.post("/v1/vector_io/insert", json=insert_request)
-
-    # Now delete
     response = await client.delete(f"/v1/vector_io/store/{store_id}")
     assert response.status_code == 200
 
@@ -332,9 +345,10 @@ async def test_delete_vector_store_success(client, sample_insert_request):
 
 
 @pytest.mark.asyncio
-async def test_delete_vector_store_nonexistent(client):
+async def test_delete_vector_store_nonexistent(client, mock_cursor):
     """Test deleting a non-existent vector store"""
+    mock_cursor.fetchone.return_value = None
+
     response = await client.delete("/v1/vector_io/store/nonexistent_store")
-    # The app catches HTTPException and re-raises as 500, but message contains "not found"
-    assert response.status_code == 500
+    assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()

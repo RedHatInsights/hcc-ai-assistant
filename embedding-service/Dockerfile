@@ -2,7 +2,10 @@ FROM python:3.14-slim
 
 WORKDIR /app
 
-# Install dependencies from pyproject.toml
+# Install torch CPU-only first to avoid pulling in ~6GB of CUDA libraries
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# Install remaining dependencies from pyproject.toml
 COPY pyproject.toml .
 RUN pip install --no-cache-dir .
 
@@ -12,15 +15,10 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 # Copy application code
 COPY main.py .
 
-# Create data directory for ChromaDB persistence
-RUN mkdir -p /app/data
-
 # Default host and port (can be overridden via env vars)
-# HOST: 0.0.0.0 for IPv4, :: for IPv6/dual-stack
 ENV HOST=0.0.0.0
 ENV PORT=8002
 
 EXPOSE ${PORT}
 
-# Run with uvicorn (host and port from environment variables)
 CMD sh -c "uvicorn main:app --host ${HOST} --port ${PORT}"

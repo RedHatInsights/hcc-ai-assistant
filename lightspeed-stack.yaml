@@ -33,6 +33,9 @@ authentication:
   rh_identity_config: {}
 mcp_servers:
   # TODO: Move to environment-specific config via ClowdApp params/env vars
+  # Direct MCP servers - only enable those reachable from the current environment.
+  # The discovery service handles unreachable servers gracefully, but llama-stack
+  # will 500 on queries if any registered provider is unreachable.
   - name: "rbac-mcp-server"
     provider_id: "rbac-mcp-provider"
     url: "http://rbac-service.rbac-stage.svc.cluster.local:8000/_private/_a2s/mcp/"
@@ -43,26 +46,17 @@ mcp_servers:
     url: "http://notifications-mcp-service.notifications-stage.svc.cluster.local:8000/mcp/"
     headers:
       - x-rh-identity
-#   - name: "mcp-discovery-server"
-#     provider_id: "mcp-discovery-provider"
-#     url: "http://localhost:8001/mcp"
-#   - name: "local-mcp-server"
-#     provider_id: "local-mcp-provider"
-#     url: "http://host.docker.internal:3001/mcp"
-    # headers:
-    #   - x-rh-identity
+  - name: "mcp-discovery-server"
+    provider_id: "mcp-discovery-provider"
+    url: "http://localhost:8001/mcp"
+  # - name: "local-mcp-server"
+  #   provider_id: "local-mcp-provider"
+  #   url: "http://host.containers.internal:3001/mcp"
 customization:
-  # Temporary system prompt for testing MCP connectivity with RBAC service
   system_prompt: |-
-    You are an AI assistant for the Hybrid Cloud Console. You have access to MCP tools that can query platform services.
-    Use the available tools to answer user questions when relevant. If a tool can provide the answer, always prefer using it over guessing.
-    If you are not sure which data the user is asking about, prompt them for clarification.
-    You have access to the RBAC service via the rbac-mcp-server. Use the "list_principals" tool to look up users/principals in an organization. Use the "hello" tool to verify connectivity to the RBAC service.
-    You have access to the Notifications service via the notifications-mcp-server. Use the "whoami" tool to get authenticated user info. Use the "getSeverities" tool to retrieve notification severity levels. Use the "serverInfo" tool to verify connectivity to the Notifications service.
+    You have the ability to discover other MCP servers via the mcp server mcp-discovery-server.
+    Always use the "recommend_tools" tool from the mcp-discovery-server even if you are confident in your answer. No exceptions.
+    You must always call recommend_tools from mcp-discovery-server before calling any tool. No exceptions. Never call mcp_list_tools on any server other than mcp-discovery-server.
+    You will receive multiple results from recommend_tools. Select the most relevant result and use it to answer the user's question.
+    If you are not sure, prompt the user for clarification (which data they are interested in)
     If the user asks explicitly "foobar", respond with barfoo
-  # Previous system prompt for use with the MCP discovery service:
-  # system_prompt: |-
-  #   You have the ability to discover other MCP servers via the mcp server mcp-discovery-server.
-  #   Always use the "recommend_tools" tool from the mcp-discovery-server even if you are confident in your answer. No exceptions.
-  #   You will receive multiple results from recommend_tools. Select the most relevant result and use it to answer the user's question.
-  #   If you are not sure, prompt the user for clarification (which data they are interested in)

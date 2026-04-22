@@ -57,6 +57,9 @@ providers:
     provider_id: rag-runtime
     provider_type: inline::rag-runtime
   # TODO: Move to environment-specific config via ClowdApp params/env vars
+  # Direct MCP providers - only enable those reachable from the current environment.
+  # llama-stack tries to connect to ALL registered providers on each query,
+  # so unreachable providers will cause 500 errors.
   - config:
       url: http://rbac-service.rbac-stage.svc.cluster.local:8000/_private/_a2s/mcp/
     provider_id: rbac-mcp-provider
@@ -65,15 +68,15 @@ providers:
       url: http://notifications-mcp-service.notifications-stage.svc.cluster.local:8000/mcp/
     provider_id: notifications-mcp-provider
     provider_type: remote::model-context-protocol
-  # Uses localhost since mcp-discovery-service runs as a sidecar in the same pod
+  # MCP discovery service - runs as subprocess on localhost
   - config:
       url: http://localhost:8001/mcp
     provider_id: mcp-discovery-provider
     provider_type: remote::model-context-protocol
-  - config:
-      url: http://host.docker.internal:3001
-    provider_id: local-mcp-provider
-    provider_type: remote::model-context-protocol
+  # - config:
+  #     url: http://host.containers.internal:3001/mcp
+  #   provider_id: local-mcp-provider
+  #   provider_type: remote::model-context-protocol
   vector_io:
   - config: # Define the storage backend for RAG
       persistence:

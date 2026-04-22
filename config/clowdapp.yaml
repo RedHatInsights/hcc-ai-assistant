@@ -27,140 +27,6 @@ objects:
               apiPath: hcc-ai-assistant
               enabled: true
         podSpec:
-          # TODO: Re-enable sidecar volumes when embedding and MCP discovery services are ready
-          # volumes:
-          #   - name: chromadb-data
-          #     persistentVolumeClaim:
-          #       claimName: chromadb-data-pvc
-          #   - name: mcp-config
-          #     configMap:
-          #       name: mcp-discovery-config
-          #   - name: mcp-data
-          #     emptyDir: {}
-          # TODO: Re-enable sidecar initContainers when images are available
-          # initContainers:
-          #   - name: embedding-service
-          #     image: ${EMBEDDING_SERVICE_IMAGE}:${EMBEDDING_SERVICE_IMAGE_TAG}
-          #     restartPolicy: Always
-          #     ports:
-          #       - name: rag
-          #         containerPort: 8002
-          #         protocol: TCP
-          #     livenessProbe:
-          #       failureThreshold: 3
-          #       httpGet:
-          #         path: /health
-          #         port: 8002
-          #         scheme: HTTP
-          #       initialDelaySeconds: 15
-          #       periodSeconds: 10
-          #       successThreshold: 1
-          #       timeoutSeconds: 10
-          #     readinessProbe:
-          #       failureThreshold: 3
-          #       httpGet:
-          #         path: /health
-          #         port: 8002
-          #         scheme: HTTP
-          #       initialDelaySeconds: 10
-          #       periodSeconds: 5
-          #       successThreshold: 1
-          #       timeoutSeconds: 10
-          #     startupProbe:
-          #       httpGet:
-          #         path: /health
-          #         port: 8002
-          #         scheme: HTTP
-          #       failureThreshold: 30
-          #       periodSeconds: 5
-          #     resources:
-          #       limits:
-          #         cpu: "2"
-          #         memory: 2Gi
-          #       requests:
-          #         cpu: "1"
-          #         memory: 1Gi
-          #     volumeMounts:
-          #       - name: chromadb-data
-          #         mountPath: /app/data
-          #     env:
-          #       - name: HOST
-          #         value: "0.0.0.0"
-          #       - name: PORT
-          #         value: "8002"
-          #       - name: LOG_LEVEL
-          #         value: "INFO"
-          #   - name: mcp-discovery-service
-          #     image: ${MCP_DISCOVERY_SERVICE_IMAGE}:${MCP_DISCOVERY_SERVICE_IMAGE_TAG}
-          #     restartPolicy: Always
-          #     ports:
-          #       - name: mcp-server
-          #         containerPort: 8001
-          #         protocol: TCP
-          #     startupProbe:
-          #       exec:
-          #         command:
-          #           - sh
-          #           - -c
-          #           - curl -f http://localhost:8002/health
-          #       failureThreshold: 60
-          #       periodSeconds: 5
-          #       timeoutSeconds: 3
-          #     livenessProbe:
-          #       failureThreshold: 3
-          #       httpGet:
-          #         path: /health
-          #         port: 8001
-          #         scheme: HTTP
-          #       initialDelaySeconds: 10
-          #       periodSeconds: 10
-          #       successThreshold: 1
-          #       timeoutSeconds: 10
-          #     readinessProbe:
-          #       failureThreshold: 3
-          #       httpGet:
-          #         path: /health
-          #         port: 8001
-          #         scheme: HTTP
-          #       initialDelaySeconds: 10
-          #       periodSeconds: 5
-          #       successThreshold: 1
-          #       timeoutSeconds: 10
-          #     resources:
-          #       limits:
-          #         cpu: "500m"
-          #         memory: 512Mi
-          #       requests:
-          #         cpu: "250m"
-          #         memory: 256Mi
-          #     volumeMounts:
-          #       - name: mcp-config
-          #         mountPath: /app-root/lightspeed-stack.yaml
-          #         subPath: lightspeed-stack.yaml
-          #         readOnly: true
-          #       - name: mcp-data
-          #         mountPath: /app-root/data
-          #     env:
-          #       - name: HOST
-          #         value: "0.0.0.0"
-          #       - name: PORT
-          #         value: "8001"
-          #       - name: MCP_CONFIG_PATH
-          #         value: "/app-root/lightspeed-stack.yaml"
-          #       - name: REFRESH_INTERVAL_MINUTES
-          #         value: "5"
-          #       - name: LOG_LEVEL
-          #         value: "INFO"
-          #       - name: ENABLE_VECTOR_STORE
-          #         value: "true"
-          #       - name: EMBEDDING_SERVICE_URL
-          #         value: "http://localhost:8002"
-          #       - name: CAPABILITIES_CACHE_PATH
-          #         value: "/app-root/data/mcp-capabilities.json"
-          #       - name: VECTOR_STORE_ID
-          #         value: "mcp-capabilities-store"
-          #       - name: EMBEDDING_MODEL
-          #         value: "sentence-transformers/all-mpnet-base-v2"
           image: ${IMAGE}:${IMAGE_TAG}
           livenessProbe:
             failureThreshold: 3
@@ -193,10 +59,10 @@ objects:
           resources:
             limits:
               cpu: "2"
-              memory: 4Gi
+              memory: 6Gi
             requests:
               cpu: "1"
-              memory: 2Gi
+              memory: 4Gi
           env:
           - name: LIGHTSPEED_STACK_CONFIG_PATH
             value: ${LIGHTSPEED_STACK_CONFIG_PATH}
@@ -224,24 +90,12 @@ objects:
                 key: clowder_mcp_server_configs.json
                 name: ${CLOWDER_MCP_SERVER_CONFIGS_NAME}
                 optional: true
-  # TODO: Re-enable when sidecar services are ready
-  # - apiVersion: v1
-  #   kind: PersistentVolumeClaim
-  #   metadata:
-  #     name: chromadb-data-pvc
-  #   spec:
-  #     accessModes:
-  #       - ReadWriteOnce
-  #     resources:
-  #       requests:
-  #         storage: ${CHROMADB_STORAGE_SIZE}
-  # - apiVersion: v1
-  #   kind: ConfigMap
-  #   metadata:
-  #     name: mcp-discovery-config
-  #   data:
-  #     lightspeed-stack.yaml: |
-  #       mcp_servers:
+          - name: EMBEDDING_SERVICE_PORT
+            value: "8002"
+          - name: MCP_DISCOVERY_SERVICE_PORT
+            value: "8001"
+          - name: ENABLE_VECTOR_STORE
+            value: "true"
 parameters:
 - name: VERTEX_PROJECT
   required: true
@@ -279,25 +133,3 @@ parameters:
 - description: ConfigMap name for MCP server to Clowder endpoint mapping
   name: CLOWDER_MCP_SERVER_CONFIGS_NAME
   value: clowder-mcp-server-configs
-- description: Init container image name
-  name: INIT_IMAGE
-  value: quay.io/redhat-services-prod/hcc-platex-services/hcc-ai-assistant
-- description: Init container image tag
-  name: INIT_IMAGE_TAG
-  required: true
-# TODO: Re-enable when sidecar services are ready
-# - description: Embedding service image (unified embeddings + vector storage)
-#   name: EMBEDDING_SERVICE_IMAGE
-#   value: quay.io/cloudservices/hcc-ai-assistant-embedding-service
-# - description: Embedding service image tag
-#   name: EMBEDDING_SERVICE_IMAGE_TAG
-#   value: latest
-# - description: MCP discovery service image
-#   name: MCP_DISCOVERY_SERVICE_IMAGE
-#   value: quay.io/cloudservices/hcc-ai-assistant-mcp-discovery-service
-# - description: MCP discovery service image tag
-#   name: MCP_DISCOVERY_SERVICE_IMAGE_TAG
-#   value: latest
-# - description: ChromaDB vector database PVC size
-#   name: CHROMADB_STORAGE_SIZE
-#   value: 10Gi
