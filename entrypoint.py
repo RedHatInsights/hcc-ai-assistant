@@ -40,13 +40,16 @@ def load_clowder_mcp_config():
     return mapping
 
 
-def resolve_mcp_urls(stack_config, clowder):
+def resolve_mcp_urls(run_config, stack_config, clowder):
     """Resolve MCP server URLs from Clowder endpoints using ConfigMap mapping.
 
     For each MCP server in stack_config["mcp_servers"], looks up the server
     name in the ConfigMap JSON to find the corresponding Clowder app name and
     path suffix.  If a matching Clowder endpoint exists, the server URL is
     replaced with http://{hostname}:{port}{mcp_server_path}.
+
+    Also updates matching tool_runtime providers in run_config so that
+    Llama Stack uses the same resolved URLs.
     """
     if not clowder or not getattr(clowder, "endpoints", None):
         return
@@ -54,6 +57,12 @@ def resolve_mcp_urls(stack_config, clowder):
     mcp_config = load_clowder_mcp_config()
     if not mcp_config:
         return
+
+    tool_runtime_providers = {
+        p["provider_id"]: p
+        for p in run_config.get("providers", {}).get("tool_runtime", [])
+        if p.get("provider_type") == "remote::model-context-protocol"
+    }
 
     for server in stack_config.get("mcp_servers", []):
         mapping = mcp_config.get(server["name"])
@@ -73,8 +82,14 @@ def resolve_mcp_urls(stack_config, clowder):
                 break
 
         if endpoint:
-            server["url"] = f"http://{endpoint.hostname}:{endpoint.port}{mcp_server_path}"
-            print(f"[entrypoint] Resolved {server['name']} -> {server['url']}")
+            resolved_url = f"http://{endpoint.hostname}:{endpoint.port}{mcp_server_path}"
+            server["url"] = resolved_url
+            print(f"[entrypoint] Resolved {server['name']} -> {resolved_url}")
+
+            provider = tool_runtime_providers.get(server.get("provider_id"))
+            if provider:
+                provider["config"]["url"] = resolved_url
+                print(f"[entrypoint] Resolved run.yaml provider {provider['provider_id']} -> {resolved_url}")
         else:
             print(f"[entrypoint] No Clowder endpoint for {server['name']} (app={app_name}), keeping existing URL")
 
@@ -141,7 +156,7 @@ def apply_clowder_config(run_config, stack_config, clowder):
         }
 
     # Resolve MCP server URLs from Clowder endpoints
-    resolve_mcp_urls(stack_config, clowder)
+    resolve_mcp_urls(run_config, stack_config, clowder)
 
     return run_config, stack_config
 
