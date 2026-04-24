@@ -32,26 +32,11 @@ authentication:
   skip_for_health_probes: true
   rh_identity_config: {}
 mcp_servers:
-  # TODO: Move to environment-specific config via ClowdApp params/env vars
-  # Direct MCP servers - only enable those reachable from the current environment.
-  # The discovery service handles unreachable servers gracefully, but llama-stack
-  # will 500 on queries if any registered provider is unreachable.
-  - name: "rbac-mcp-server"
-    provider_id: "rbac-mcp-provider"
-    url: "http://rbac-service.rbac-stage.svc.cluster.local:8000/_private/_a2s/mcp/"
-    headers:
-      - x-rh-identity
-  - name: "notifications-mcp-server"
-    provider_id: "notifications-mcp-provider"
-    url: "http://notifications-mcp-service.notifications-stage.svc.cluster.local:8000/mcp/"
-    headers:
-      - x-rh-identity
+  # Dynamic MCP servers are merged from CLOWDER_MCP_SERVER_CONFIGS env var at startup.
+  # Only "hard" servers that must always be present belong here.
   - name: "mcp-discovery-server"
     provider_id: "mcp-discovery-provider"
     url: "http://localhost:8001/mcp"
-  # - name: "local-mcp-server"
-  #   provider_id: "local-mcp-provider"
-  #   url: "http://host.containers.internal:3001/mcp"
 customization:
   system_prompt: |-
     You have the ability to discover other MCP servers via the mcp server mcp-discovery-server.

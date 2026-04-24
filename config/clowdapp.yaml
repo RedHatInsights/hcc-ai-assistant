@@ -129,7 +129,7 @@ parameters:
   required: true
 - description: Clowder optional dependencies (JSON array of app names)
   name: OPTIONAL_DEPENDENCIES
-  value: '["rbac", "notifications-mcp"]'
+  value: '["notifications-mcp"]'
 - description: ConfigMap name for MCP server to Clowder endpoint mapping
   name: CLOWDER_MCP_SERVER_CONFIGS_NAME
   value: clowder-mcp-server-configs

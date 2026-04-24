@@ -33,70 +33,121 @@ def load_clowder_config():
     return LoadedConfig
 
 
-def load_clowder_mcp_config():
-    """Load MCP server-to-Clowder-endpoint mapping from env var (injected via ConfigMap)."""
+def load_mcp_server_configs():
+    """Load MCP server definitions from env var or local config file.
+
+    Returns a dict keyed by server name. Each value contains provider_id, url,
+    optional headers, and optional Clowder resolution fields (clowder_app,
+    clowder_service, mcp_server_path).
+    """
     raw = os.environ.get("CLOWDER_MCP_SERVER_CONFIGS")
     if not raw:
-        print("[entrypoint] CLOWDER_MCP_SERVER_CONFIGS not set, skipping URL resolution")
+        config_path = os.path.join(TEMPLATE_DIR, "local_mcp_server_configs.json")
+        try:
+            with open(config_path) as f:
+                raw = f.read()
+            print(f"[entrypoint] Loaded MCP server configs from {config_path}")
+        except FileNotFoundError:
+            print("[entrypoint] No MCP server configs found, no dynamic MCP servers")
+            return {}
+
+    try:
+        configs = json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(f"[entrypoint] ERROR: Malformed JSON in MCP server configs: {e}")
         return {}
 
-    mapping = json.loads(raw)
-    print(f"[entrypoint] Loaded Clowder MCP config: {len(mapping)} server(s)")
-    return mapping
+    print(f"[entrypoint] Loaded MCP server configs: {len(configs)} server(s)")
+    return configs
 
 
-def resolve_mcp_urls(run_config, stack_config, clowder):
-    """Resolve MCP server URLs from Clowder endpoints using ConfigMap mapping.
+def merge_mcp_servers(run_config, stack_config, clowder):
+    """Merge dynamic MCP servers from env var into configs and resolve Clowder URLs.
 
-    For each MCP server in stack_config["mcp_servers"], looks up the server
-    name in the ConfigMap JSON to find the corresponding Clowder app name and
-    path suffix.  If a matching Clowder endpoint exists, the server URL is
-    replaced with http://{hostname}:{port}{mcp_server_path}.
-
-    Also updates matching tool_runtime providers in run_config so that
-    Llama Stack uses the same resolved URLs.
+    1. Load server definitions from CLOWDER_MCP_SERVER_CONFIGS env var
+    2. Merge into stack_config[mcp_servers] and run_config tool_runtime providers
+       (de-duplicating by server name / provider_id)
+    3. Resolve URLs from Clowder endpoints for servers with clowder_app field
     """
-    if not clowder or not getattr(clowder, "endpoints", None):
+    mcp_configs = load_mcp_server_configs()
+    if not mcp_configs:
         return
 
-    mcp_config = load_clowder_mcp_config()
-    if not mcp_config:
-        return
+    mcp_servers = stack_config.setdefault("mcp_servers", [])
+    tool_runtime = run_config.setdefault("providers", {}).setdefault("tool_runtime", [])
 
-    tool_runtime_providers = {
-        p["provider_id"]: p
-        for p in run_config.get("providers", {}).get("tool_runtime", [])
+    existing_servers = {s["name"]: i for i, s in enumerate(mcp_servers)}
+    existing_providers = {
+        p["provider_id"]: i for i, p in enumerate(tool_runtime)
         if p.get("provider_type") == "remote::model-context-protocol"
     }
 
-    for server in stack_config.get("mcp_servers", []):
-        mapping = mcp_config.get(server["name"])
-        if not mapping:
+    for name, cfg in mcp_configs.items():
+        provider_id = cfg["provider_id"]
+        url = cfg["url"]
+
+        server_entry = {"name": name, "provider_id": provider_id, "url": url}
+        if "headers" in cfg:
+            server_entry["headers"] = cfg["headers"]
+
+        if name in existing_servers:
+            mcp_servers[existing_servers[name]] = server_entry
+        else:
+            mcp_servers.append(server_entry)
+
+        provider_entry = {
+            "config": {"url": url},
+            "provider_id": provider_id,
+            "provider_type": "remote::model-context-protocol",
+        }
+
+        if provider_id in existing_providers:
+            tool_runtime[existing_providers[provider_id]] = provider_entry
+        else:
+            tool_runtime.append(provider_entry)
+
+        print(f"[entrypoint] Registered MCP server {name} ({url})")
+
+    if not clowder or not getattr(clowder, "endpoints", None):
+        return
+
+    server_by_name = {s["name"]: s for s in mcp_servers}
+    provider_by_id = {
+        p["provider_id"]: p for p in tool_runtime
+        if p.get("provider_type") == "remote::model-context-protocol"
+    }
+
+    for name, cfg in mcp_configs.items():
+        clowder_app = cfg.get("clowder_app")
+        if not clowder_app:
             continue
 
-        app_name = mapping["clowder_app"]
-        service_name = mapping.get("clowder_service")
-        mcp_server_path = mapping.get("mcp_server_path", "/")
+        service_name = cfg.get("clowder_service")
+        mcp_server_path = cfg.get("mcp_server_path", "/")
 
         endpoint = None
         for ep in clowder.endpoints:
-            if ep.app == app_name:
+            if ep.app == clowder_app:
                 if service_name and ep.name != service_name:
                     continue
                 endpoint = ep
                 break
 
-        if endpoint:
-            resolved_url = f"http://{endpoint.hostname}:{endpoint.port}{mcp_server_path}"
-            server["url"] = resolved_url
-            print(f"[entrypoint] Resolved {server['name']} -> {resolved_url}")
+        if not endpoint:
+            print(f"[entrypoint] No Clowder endpoint for {name} (app={clowder_app}), keeping URL")
+            continue
 
-            provider = tool_runtime_providers.get(server.get("provider_id"))
-            if provider:
-                provider["config"]["url"] = resolved_url
-                print(f"[entrypoint] Resolved run.yaml provider {provider['provider_id']} -> {resolved_url}")
-        else:
-            print(f"[entrypoint] No Clowder endpoint for {server['name']} (app={app_name}), keeping existing URL")
+        resolved_url = f"http://{endpoint.hostname}:{endpoint.port}{mcp_server_path}"
+
+        server = server_by_name.get(name)
+        if server:
+            server["url"] = resolved_url
+
+        provider = provider_by_id.get(cfg["provider_id"])
+        if provider:
+            provider["config"]["url"] = resolved_url
+
+        print(f"[entrypoint] Resolved {name} -> {resolved_url}")
 
 
 def apply_clowder_config(run_config, stack_config, clowder):
@@ -161,9 +212,6 @@ def apply_clowder_config(run_config, stack_config, clowder):
             "postgres": pg_config,
         }
 
-    # Resolve MCP server URLs from Clowder endpoints
-    resolve_mcp_urls(run_config, stack_config, clowder)
-
     return run_config, stack_config
 
 
@@ -184,6 +232,7 @@ def render_configs(clowder):
         stack_config = yaml.safe_load(f)
 
     run_config, stack_config = apply_clowder_config(run_config, stack_config, clowder)
+    merge_mcp_servers(run_config, stack_config, clowder)
 
     run_out = os.path.join(RUNTIME_DIR, RUN_YAML)
     stack_out = os.path.join(RUNTIME_DIR, STACK_YAML)

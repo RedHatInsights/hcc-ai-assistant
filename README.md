@@ -149,6 +149,33 @@ mcp_servers:
 
 In Kubernetes/OpenShift, this is managed via ConfigMap (mounted as lightspeed-stack.yaml).
 
+### Adding MCP Servers Locally
+
+To register MCP servers for local development, edit `local_mcp_server_configs.json` in the project root:
+
+```json
+{
+  "my-mcp-server": {
+    "provider_id": "my-mcp-provider",
+    "url": "http://localhost:9000/mcp/",
+    "headers": ["x-rh-identity"]
+  }
+}
+```
+
+Each entry requires:
+- **key**: A unique server name (e.g. `"my-mcp-server"`)
+- **`provider_id`**: Unique provider identifier used in the LightSpeed stack tool runtime
+- **`url`**: The MCP server endpoint URL
+
+Optional fields:
+- **`headers`**: List of HTTP headers to forward to the MCP server
+- **`clowder_app`**: Clowder application name for automatic URL resolution in-cluster
+- **`clowder_service`**: Clowder service name (used with `clowder_app` to match the correct endpoint)
+- **`mcp_server_path`**: Path appended to the resolved Clowder URL (default: `"/"`)
+
+The entrypoint loads this file as a fallback when the `CLOWDER_MCP_SERVER_CONFIGS` environment variable is not set. In deployed environments, the env var is populated from a ConfigMap via app-interface.
+
 ## Testing
 
 ### Quick Health Checks

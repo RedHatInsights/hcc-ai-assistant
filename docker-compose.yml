@@ -54,6 +54,7 @@
       # Linux Docker users: add --add-host=host.containers.internal:host-gateway when running
       volumes:
         - ./service-account-key.json:/app/service-account-key.json:ro
+        - ./local_mcp_server_configs.json:/app/local_mcp_server_configs.json:ro
       healthcheck:
         test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/8000' || exit 1"]
         interval: 10s
