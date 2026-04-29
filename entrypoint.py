@@ -84,7 +84,11 @@ def merge_mcp_servers(run_config, stack_config, clowder):
 
     for name, cfg in mcp_configs.items():
         provider_id = cfg["provider_id"]
-        url = cfg["url"]
+        url = cfg.get("url", "")
+
+        if not url and not cfg.get("clowder_app"):
+            print(f"[entrypoint] ERROR: MCP server {name} has no 'url' and no 'clowder_app' — skipping")
+            continue
 
         server_entry = {"name": name, "provider_id": provider_id, "url": url}
         if "headers" in cfg:

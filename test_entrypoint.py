@@ -154,11 +154,23 @@ class TestMergeMcpServers:
         assert "mcp_servers" in stack_config
         assert "tool_runtime" in run_config.get("providers", {})
 
+    def test_skips_server_without_url_or_clowder(self, monkeypatch, base_run_config, base_stack_config):
+        configs = {
+            "bad-server": {
+                "provider_id": "bad-provider",
+            }
+        }
+        monkeypatch.setenv("CLOWDER_MCP_SERVER_CONFIGS", json.dumps(configs))
+
+        merge_mcp_servers(base_run_config, base_stack_config, clowder=None)
+
+        assert len(base_stack_config["mcp_servers"]) == 0
+        assert len(base_run_config["providers"]["tool_runtime"]) == 0
+
     def test_clowder_url_resolution(self, monkeypatch, base_run_config, base_stack_config):
         configs = {
             "my-server": {
                 "provider_id": "my-provider",
-                "url": "http://placeholder/mcp/",
                 "clowder_app": "my-app",
                 "mcp_server_path": "/mcp/",
             }
