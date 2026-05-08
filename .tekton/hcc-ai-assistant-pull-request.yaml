@@ -242,6 +242,13 @@ spec:
           volumeMounts:
           - mountPath: /var/workdir
             name: workdir
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "1000m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
         - name: test-mcp-discovery-service
           image: registry.access.redhat.com/ubi9/python-312:latest
           workingDir: /var/workdir
@@ -263,6 +270,13 @@ spec:
           volumeMounts:
           - mountPath: /var/workdir
             name: workdir
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
         - name: test-post-pr-skill
           image: registry.access.redhat.com/ubi9/python-312:latest
           workingDir: /var/workdir
@@ -285,6 +299,13 @@ spec:
           volumeMounts:
           - mountPath: /var/workdir
             name: workdir
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
         - name: test-wrap-up-skill
           image: registry.access.redhat.com/ubi9/python-312:latest
           workingDir: /var/workdir
@@ -307,6 +328,13 @@ spec:
           volumeMounts:
           - mountPath: /var/workdir
             name: workdir
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
         volumes:
         - name: workdir
           emptyDir: {}
