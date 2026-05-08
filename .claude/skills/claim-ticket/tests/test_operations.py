@@ -45,9 +45,7 @@ class TestGetBotAccountId:
 
         mock_response = Mock()
         mock_response.raise_for_status = Mock()
-        mock_response.json.return_value = [
-            {"accountId": "bot-account-123", "emailAddress": "test@example.com"}
-        ]
+        mock_response.json.return_value = [{"accountId": "bot-account-123", "emailAddress": "test@example.com"}]
 
         mock_client.get.return_value = mock_response
 
@@ -411,9 +409,7 @@ class TestResolveBoard:
 
         mock_response = Mock()
         mock_response.raise_for_status = Mock()
-        mock_response.json.return_value = {
-            "fields": {"labels": ["platform-experience-ui", "bug", "high-priority"]}
-        }
+        mock_response.json.return_value = {"fields": {"labels": ["platform-experience-ui", "bug", "high-priority"]}}
 
         mock_client.get.return_value = mock_response
 
@@ -517,9 +513,7 @@ class TestGetActiveSprint:
 
         mock_response = Mock()
         mock_response.raise_for_status = Mock()
-        mock_response.json.return_value = {
-            "values": [{"id": 12345, "name": "Sprint 42", "state": "active"}]
-        }
+        mock_response.json.return_value = {"values": [{"id": 12345, "name": "Sprint 42", "state": "active"}]}
 
         mock_client.get.return_value = mock_response
 

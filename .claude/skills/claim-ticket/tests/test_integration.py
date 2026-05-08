@@ -193,9 +193,7 @@ class TestFullWorkflow:
 
     def test_workflow_with_skip_operations(self, env_vars, mock_api):
         """Test workflow with specific operations skipped."""
-        result = execute_claim_ticket_workflow(
-            jira_key="RHCLOUD-11111", skip_operations=["add_to_sprint", "task_add"]
-        )
+        result = execute_claim_ticket_workflow(jira_key="RHCLOUD-11111", skip_operations=["add_to_sprint", "task_add"])
 
         assert result.success is True
 

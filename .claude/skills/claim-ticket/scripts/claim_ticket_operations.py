@@ -221,10 +221,7 @@ class ClaimTicketOperations:
                 # Find "In Progress" transition
                 in_progress_transition = None
                 for transition in transitions:
-                    if (
-                        transition.get("name") == "In Progress"
-                        or transition.get("to", {}).get("name") == "In Progress"
-                    ):
+                    if transition.get("name") == "In Progress" or transition.get("to", {}).get("name") == "In Progress":
                         in_progress_transition = transition
                         break
 

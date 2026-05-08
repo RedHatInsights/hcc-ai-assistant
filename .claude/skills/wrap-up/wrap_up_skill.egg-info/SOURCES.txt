@@ -1,0 +1,9 @@
+SKILL.md
+pyproject.toml
+tests/test_integration.py
+tests/test_operations.py
+wrap_up_skill.egg-info/PKG-INFO
+wrap_up_skill.egg-info/SOURCES.txt
+wrap_up_skill.egg-info/dependency_links.txt
+wrap_up_skill.egg-info/requires.txt
+wrap_up_skill.egg-info/top_level.txt
