@@ -669,14 +669,14 @@ def execute_claim_ticket_workflow(
         WorkflowResult with success status and operation results
     """
     # Resolve configuration from environment variables
-    jira_url = jira_url or os.getenv("CLAIM_TICKET_JIRA_URL", "https://redhat.atlassian.net")
-    jira_token = jira_token or os.getenv("CLAIM_TICKET_JIRA_TOKEN") or os.getenv("JIRA_API_TOKEN")
-    jira_email = jira_email or os.getenv("CLAIM_TICKET_JIRA_EMAIL")
+    jira_url = jira_url or os.getenv("JIRA_URL", "https://redhat.atlassian.net")
+    jira_token = jira_token or os.getenv("JIRA_API_TOKEN")
+    jira_email = jira_email or os.getenv("JIRA_EMAIL")
     memory_url = memory_url or os.getenv("BOT_MEMORY_URL")
 
     # Validate required configuration
     if not jira_token:
-        logger.error("JIRA token not configured (set CLAIM_TICKET_JIRA_TOKEN or JIRA_API_TOKEN)")
+        logger.error("JIRA token not configured (set JIRA_API_TOKEN)")
         return WorkflowResult(
             success=False,
             operations=[
@@ -690,7 +690,7 @@ def execute_claim_ticket_workflow(
         )
 
     if not jira_email:
-        logger.error("JIRA email not configured (set CLAIM_TICKET_JIRA_EMAIL)")
+        logger.error("JIRA email not configured (set JIRA_EMAIL)")
         return WorkflowResult(
             success=False,
             operations=[
@@ -859,9 +859,11 @@ def main() -> int:
     """CLI entrypoint for claim ticket workflow."""
     parser = argparse.ArgumentParser(description="Execute claim ticket workflow")
     parser.add_argument("jira_key", help="JIRA ticket key (e.g., RHCLOUD-12345)")
-    parser.add_argument("--jira-url", help="JIRA instance URL (default: env var or https://redhat.atlassian.net)")
-    parser.add_argument("--jira-token", help="JIRA API token (default: env var CLAIM_TICKET_JIRA_TOKEN)")
-    parser.add_argument("--jira-email", help="JIRA user email (default: env var CLAIM_TICKET_JIRA_EMAIL)")
+    parser.add_argument(
+        "--jira-url", help="JIRA instance URL (default: env var JIRA_URL or https://redhat.atlassian.net)"
+    )
+    parser.add_argument("--jira-token", help="JIRA API token (default: env var JIRA_API_TOKEN)")
+    parser.add_argument("--jira-email", help="JIRA user email (default: env var JIRA_EMAIL)")
     parser.add_argument("--memory-url", help="Memory server URL (default: env var BOT_MEMORY_URL)")
     parser.add_argument(
         "--skip",

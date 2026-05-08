@@ -13,9 +13,9 @@ from scripts.claim_ticket_operations import (
 @pytest.fixture
 def env_vars(monkeypatch):
     """Set up environment variables for testing."""
-    monkeypatch.setenv("CLAIM_TICKET_JIRA_URL", "https://test-jira.example.com")
-    monkeypatch.setenv("CLAIM_TICKET_JIRA_TOKEN", "test-jira-token")
-    monkeypatch.setenv("CLAIM_TICKET_JIRA_EMAIL", "test@example.com")
+    monkeypatch.setenv("JIRA_URL", "https://test-jira.example.com")
+    monkeypatch.setenv("JIRA_API_TOKEN", "test-jira-token")
+    monkeypatch.setenv("JIRA_EMAIL", "test@example.com")
     monkeypatch.setenv("BOT_MEMORY_URL", "https://test-memory.example.com")
 
 
@@ -230,9 +230,9 @@ class TestConfigValidation:
 
     def test_workflow_missing_jira_token(self, monkeypatch):
         """Test workflow fails when JIRA token is missing."""
-        monkeypatch.delenv("CLAIM_TICKET_JIRA_TOKEN", raising=False)
         monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
-        monkeypatch.setenv("CLAIM_TICKET_JIRA_EMAIL", "test@example.com")
+        monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
+        monkeypatch.setenv("JIRA_EMAIL", "test@example.com")
         monkeypatch.setenv("BOT_MEMORY_URL", "https://test-memory.example.com")
 
         result = execute_claim_ticket_workflow(jira_key="RHCLOUD-12345")
@@ -244,8 +244,8 @@ class TestConfigValidation:
 
     def test_workflow_missing_jira_email(self, monkeypatch):
         """Test workflow fails when JIRA email is missing."""
-        monkeypatch.setenv("CLAIM_TICKET_JIRA_TOKEN", "test-token")
-        monkeypatch.delenv("CLAIM_TICKET_JIRA_EMAIL", raising=False)
+        monkeypatch.setenv("JIRA_API_TOKEN", "test-token")
+        monkeypatch.delenv("JIRA_EMAIL", raising=False)
         monkeypatch.setenv("BOT_MEMORY_URL", "https://test-memory.example.com")
 
         result = execute_claim_ticket_workflow(jira_key="RHCLOUD-12345")
@@ -257,8 +257,8 @@ class TestConfigValidation:
 
     def test_workflow_missing_memory_url(self, monkeypatch):
         """Test workflow fails when memory URL is missing."""
-        monkeypatch.setenv("CLAIM_TICKET_JIRA_TOKEN", "test-token")
-        monkeypatch.setenv("CLAIM_TICKET_JIRA_EMAIL", "test@example.com")
+        monkeypatch.setenv("JIRA_API_TOKEN", "test-token")
+        monkeypatch.setenv("JIRA_EMAIL", "test@example.com")
         monkeypatch.delenv("BOT_MEMORY_URL", raising=False)
 
         result = execute_claim_ticket_workflow(jira_key="RHCLOUD-12345")
@@ -270,9 +270,9 @@ class TestConfigValidation:
 
     def test_workflow_fallback_to_jira_api_token(self, env_vars, mock_api, monkeypatch):
         """Test workflow can use JIRA_API_TOKEN as fallback."""
-        monkeypatch.delenv("CLAIM_TICKET_JIRA_TOKEN", raising=False)
+        monkeypatch.delenv("JIRA_API_TOKEN", raising=False)
         monkeypatch.setenv("JIRA_API_TOKEN", "fallback-token")
-        monkeypatch.setenv("CLAIM_TICKET_JIRA_EMAIL", "test@example.com")
+        monkeypatch.setenv("JIRA_EMAIL", "test@example.com")
         monkeypatch.setenv("BOT_MEMORY_URL", "https://test-memory.example.com")
 
         result = execute_claim_ticket_workflow(jira_key="RHCLOUD-12345")

@@ -64,9 +64,9 @@ from scripts.claim_ticket_operations import execute_claim_ticket_workflow
 
 result = execute_claim_ticket_workflow(
     jira_key="RHCLOUD-12345",
-    jira_url=None,  # Falls back to CLAIM_TICKET_JIRA_URL env var
-    jira_token=None,  # Falls back to CLAIM_TICKET_JIRA_TOKEN or JIRA_API_TOKEN
-    jira_email=None,  # Falls back to CLAIM_TICKET_JIRA_EMAIL env var
+    jira_url=None,  # Falls back to JIRA_URL env var
+    jira_token=None,  # Falls back to JIRA_API_TOKEN or JIRA_API_TOKEN
+    jira_email=None,  # Falls back to JIRA_EMAIL env var
     memory_url=None,  # Falls back to BOT_MEMORY_URL env var
     skip_operations=[],
     dry_run=False,
@@ -89,9 +89,9 @@ Set these environment variables for API integrations:
 
 ```bash
 # JIRA Cloud (required)
-export CLAIM_TICKET_JIRA_TOKEN=your_api_token_here
-export CLAIM_TICKET_JIRA_EMAIL=your.email@redhat.com
-export CLAIM_TICKET_JIRA_URL=https://redhat.atlassian.net  # Optional, default
+export JIRA_API_TOKEN=your_api_token_here
+export JIRA_EMAIL=your.email@redhat.com
+export JIRA_URL=https://redhat.atlassian.net  # Optional, default
 
 # Alternative JIRA token (fallback)
 export JIRA_API_TOKEN=your_api_token_here
@@ -230,11 +230,11 @@ class ClaimTicketOperations:
 ### Common Issues
 
 **Error: "JIRA token not configured"**
-- Set `CLAIM_TICKET_JIRA_TOKEN` or `JIRA_API_TOKEN` environment variable
+- Set `JIRA_API_TOKEN` or `JIRA_API_TOKEN` environment variable
 - Or pass `--jira-token` parameter
 
 **Error: "JIRA email not configured"**
-- Set `CLAIM_TICKET_JIRA_EMAIL` environment variable
+- Set `JIRA_EMAIL` environment variable
 - Or pass `--jira-email` parameter
 
 **Error: "Memory server URL not configured"**

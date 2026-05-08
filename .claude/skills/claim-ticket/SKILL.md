@@ -29,9 +29,9 @@ Set these environment variables:
 
 ```bash
 # JIRA Cloud (required)
-export CLAIM_TICKET_JIRA_TOKEN=your_api_token_here
-export CLAIM_TICKET_JIRA_EMAIL=your.email@redhat.com
-export CLAIM_TICKET_JIRA_URL=https://redhat.atlassian.net  # Optional, default
+export JIRA_API_TOKEN=your_api_token_here
+export JIRA_EMAIL=your.email@redhat.com
+export JIRA_URL=https://redhat.atlassian.net  # Optional, default
 
 # Memory Server (required)
 export BOT_MEMORY_URL=https://memory-server.example.com
