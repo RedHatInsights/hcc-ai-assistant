@@ -12,7 +12,7 @@ dependencies = [
     "pydantic>=2.11.0,<3.0.0",  # Aligned with mcp-discovery
     "psycopg2-binary>=2.9.0",
     "pgvector>=0.3.0",
-    "starlette>=0.37.2,<0.42.0",  # Explicit version range
+    "starlette>=0.52.1,<0.53.0",  # Explicit version range
 ]
 
 [project.optional-dependencies]
