@@ -242,6 +242,13 @@ spec:
           volumeMounts:
           - mountPath: /var/workdir
             name: workdir
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "1000m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
         - name: test-mcp-discovery-service
           image: registry.access.redhat.com/ubi9/python-312:latest
           workingDir: /var/workdir
@@ -263,6 +270,13 @@ spec:
           volumeMounts:
           - mountPath: /var/workdir
             name: workdir
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
         - name: test-post-pr-skill
           image: registry.access.redhat.com/ubi9/python-312:latest
           workingDir: /var/workdir
@@ -285,6 +299,42 @@ spec:
           volumeMounts:
           - mountPath: /var/workdir
             name: workdir
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+        - name: test-claim-ticket-skill
+          image: registry.access.redhat.com/ubi9/python-312:latest
+          workingDir: /var/workdir
+          script: |
+            #!/bin/bash
+            set -e
+            echo "Running claim-ticket skill tests (54 tests)..."
+            # Copy skill to writable workspace
+            cp -r /var/workdir/source/.claude/skills/claim-ticket /var/workdir/claim-ticket-test
+            cd /var/workdir/claim-ticket-test
+            # Install dependencies with uv (including dev extras for pytest)
+            pip install --quiet uv
+            uv sync --frozen --all-extras
+            # Run tests
+            uv run pytest -v || {
+              echo "Claim-ticket skill tests failed!"
+              exit 1
+            }
+            echo "Claim-ticket skill tests passed!"
+          volumeMounts:
+          - mountPath: /var/workdir
+            name: workdir
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
         volumes:
         - name: workdir
           emptyDir: {}

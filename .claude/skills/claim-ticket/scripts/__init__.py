@@ -1,0 +1,1 @@
+"""Claim ticket skill package."""
