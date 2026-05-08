@@ -2,8 +2,6 @@
 
 from unittest import mock
 
-import pytest
-
 from scripts.wrap_up_operations import OperationStatus, execute_wrap_up_workflow
 
 

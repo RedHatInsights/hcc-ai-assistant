@@ -276,7 +276,10 @@ class WrapUpOperations:
                     {
                         "type": "paragraph",
                         "content": [
-                            {"type": "text", "text": "Changes will be deployed to stage environment in the next release."}
+                            {
+                                "type": "text",
+                                "text": "Changes will be deployed to stage environment in the next release.",
+                            }
                         ],
                     },
                 ],
@@ -900,7 +903,12 @@ def main() -> int:
         print(f"\nWrap-up workflow for {result.jira_key}:")
         print("=" * 60)
         for op in result.operations:
-            status_symbol = "✓" if op.status == OperationStatus.SUCCESS else "✗" if op.status == OperationStatus.FAILED else "○"
+            if op.status == OperationStatus.SUCCESS:
+                status_symbol = "✓"
+            elif op.status == OperationStatus.FAILED:
+                status_symbol = "✗"
+            else:
+                status_symbol = "○"
             print(f"{status_symbol} {op.operation}: {op.message}")
         print("=" * 60)
         if result.success:

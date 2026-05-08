@@ -1,9 +1,6 @@
 """Unit tests for wrap-up operations."""
 
 import base64
-import json
-import subprocess
-from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -11,7 +8,6 @@ import pytest
 from scripts.wrap_up_operations import (
     OperationStatus,
     WrapUpOperations,
-    execute_wrap_up_workflow,
 )
 
 
