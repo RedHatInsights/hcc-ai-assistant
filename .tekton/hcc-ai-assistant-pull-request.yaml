@@ -244,11 +244,11 @@ spec:
             name: workdir
           resources:
             requests:
-              memory: "4Gi"
-              cpu: "1000m"
-            limits:
-              memory: "8Gi"
+              memory: "6Gi"
               cpu: "2000m"
+            limits:
+              memory: "12Gi"
+              cpu: "4000m"
         - name: test-mcp-discovery-service
           image: registry.access.redhat.com/ubi9/python-312:latest
           workingDir: /var/workdir
