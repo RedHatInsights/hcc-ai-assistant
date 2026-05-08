@@ -105,7 +105,13 @@ class TestTaskUpdate:
     def test_task_update_dry_run(self, temp_dir):
         """Test GitHub PR update in dry-run mode."""
         operations = PostPROperations(
-            github_token="test-token", memory_store_path=str(temp_dir / "memory.json"), dry_run=True
+            github_token="test-token",
+            jira_url="https://test.atlassian.net",
+            jira_token="test-jira-token",
+            jira_email="test@example.com",
+            slack_webhook="https://hooks.slack.com/test",
+            memory_store_path=str(temp_dir / "memory.json"),
+            dry_run=True,
         )
 
         result = operations.task_update(
@@ -155,7 +161,14 @@ class TestTaskUpdate:
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
         monkeypatch.delenv("GH_TOKEN", raising=False)
 
-        operations = PostPROperations(github_token=None, memory_store_path=str(temp_dir / "memory.json"))
+        operations = PostPROperations(
+            github_token="",
+            jira_url="https://test.atlassian.net",
+            jira_token="test-jira-token",
+            jira_email="test@example.com",
+            slack_webhook="https://hooks.slack.com/test",
+            memory_store_path=str(temp_dir / "memory.json"),
+        )
 
         result = operations.task_update(
             pr_url="https://github.com/test/repo/pull/4", pr_number=4, ticket_id="TICKET-222", reviewers=None
@@ -236,7 +249,14 @@ class TestJiraTransitionIssue:
     def test_jira_transition_no_token(self, temp_dir, monkeypatch):
         """Test JIRA transition fails without token."""
         monkeypatch.delenv("POST_PR_JIRA_TOKEN", raising=False)
-        operations = PostPROperations(jira_token=None, memory_store_path=str(temp_dir / "memory.json"))
+        operations = PostPROperations(
+            github_token="test-token",
+            jira_url="https://test.atlassian.net",
+            jira_token="",
+            jira_email="test@example.com",
+            slack_webhook="https://hooks.slack.com/test",
+            memory_store_path=str(temp_dir / "memory.json"),
+        )
 
         result = operations.jira_transition_issue(ticket_id="TICKET-456")
 
@@ -360,7 +380,14 @@ class TestJiraAddComment:
     def test_jira_add_comment_no_token(self, temp_dir, monkeypatch):
         """Test JIRA comment fails without token."""
         monkeypatch.delenv("POST_PR_JIRA_TOKEN", raising=False)
-        operations = PostPROperations(jira_token=None, memory_store_path=str(temp_dir / "memory.json"))
+        operations = PostPROperations(
+            github_token="test-token",
+            jira_url="https://test.atlassian.net",
+            jira_token="",
+            jira_email="test@example.com",
+            slack_webhook="https://hooks.slack.com/test",
+            memory_store_path=str(temp_dir / "memory.json"),
+        )
 
         result = operations.jira_add_comment(
             ticket_id="TICKET-456", pr_url="https://github.com/test/repo/pull/2", summary="Test"
@@ -428,7 +455,14 @@ class TestSlackNotify:
     def test_slack_notify_no_webhook(self, temp_dir, monkeypatch):
         """Test Slack notification fails without webhook."""
         monkeypatch.delenv("POST_PR_SLACK_WEBHOOK", raising=False)
-        operations = PostPROperations(slack_webhook=None, memory_store_path=str(temp_dir / "memory.json"))
+        operations = PostPROperations(
+            github_token="test-token",
+            jira_url="https://test.atlassian.net",
+            jira_token="test-jira-token",
+            jira_email="test@example.com",
+            slack_webhook="",
+            memory_store_path=str(temp_dir / "memory.json"),
+        )
 
         result = operations.slack_notify(
             pr_url="https://github.com/test/repo/pull/2", pr_number=2, summary="Test", channel="#test"
@@ -513,7 +547,15 @@ class TestMemoryStore:
 
     def test_memory_store_dry_run(self, temp_dir):
         """Test memory storage in dry-run mode."""
-        operations = PostPROperations(memory_store_path=str(temp_dir / "memory.json"), dry_run=True)
+        operations = PostPROperations(
+            github_token="test-token",
+            jira_url="https://test.atlassian.net",
+            jira_token="test-jira-token",
+            jira_email="test@example.com",
+            slack_webhook="https://hooks.slack.com/test",
+            memory_store_path=str(temp_dir / "memory.json"),
+            dry_run=True,
+        )
 
         result = operations.memory_store(
             pr_url="https://github.com/test/repo/pull/3", ticket_id="TICKET-789", learnings={"patterns": []}
@@ -552,7 +594,15 @@ class TestBotStatusUpdate:
 
     def test_bot_status_update_dry_run(self, temp_dir):
         """Test bot status update in dry-run mode."""
-        operations = PostPROperations(memory_store_path=str(temp_dir / "memory.json"), dry_run=True)
+        operations = PostPROperations(
+            github_token="test-token",
+            jira_url="https://test.atlassian.net",
+            jira_token="test-jira-token",
+            jira_email="test@example.com",
+            slack_webhook="https://hooks.slack.com/test",
+            memory_store_path=str(temp_dir / "memory.json"),
+            dry_run=True,
+        )
 
         result = operations.bot_status_update(status="idle")
 

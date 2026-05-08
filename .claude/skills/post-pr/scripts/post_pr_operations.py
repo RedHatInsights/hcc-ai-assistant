@@ -87,30 +87,30 @@ class PostPROperations:
 
     def __init__(
         self,
-        github_token: Optional[str] = None,
-        jira_url: str = "https://redhat.atlassian.net",
-        jira_token: Optional[str] = None,
-        jira_email: Optional[str] = None,
-        slack_webhook: Optional[str] = None,
-        memory_store_path: str = "/tmp/memory.json",
+        github_token: str,
+        jira_url: str,
+        jira_token: str,
+        jira_email: str,
+        slack_webhook: str,
+        memory_store_path: str,
         dry_run: bool = False,
     ):
         """Initialize with configuration.
 
         Args:
-            github_token: GitHub API token (falls back to GITHUB_TOKEN env var)
-            jira_url: JIRA instance URL (use redhat.atlassian.net for JIRA Cloud)
-            jira_token: JIRA API token (falls back to POST_PR_JIRA_TOKEN env var)
-            jira_email: Email for JIRA Basic auth (falls back to POST_PR_JIRA_EMAIL env var)
-            slack_webhook: Slack webhook URL (falls back to POST_PR_SLACK_WEBHOOK env var)
+            github_token: GitHub API token
+            jira_url: JIRA instance URL (e.g., https://redhat.atlassian.net)
+            jira_token: JIRA API token
+            jira_email: Email for JIRA Basic auth
+            slack_webhook: Slack webhook URL
             memory_store_path: Path to memory storage file
             dry_run: If True, log actions without executing
         """
-        self.github_token = github_token or os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+        self.github_token = github_token
         self.jira_url = jira_url
-        self.jira_token = jira_token or os.getenv("POST_PR_JIRA_TOKEN")
-        self.jira_email = jira_email or os.getenv("POST_PR_JIRA_EMAIL", "")
-        self.slack_webhook = slack_webhook or os.getenv("POST_PR_SLACK_WEBHOOK")
+        self.jira_token = jira_token
+        self.jira_email = jira_email
+        self.slack_webhook = slack_webhook
         self.memory_store_path = Path(memory_store_path)
         self.dry_run = dry_run
 
@@ -536,8 +536,12 @@ def execute_post_pr_workflow(
     ticket_id: str,
     summary: str,
     github_token: Optional[str] = None,
+    jira_url: Optional[str] = None,
     jira_token: Optional[str] = None,
+    jira_email: Optional[str] = None,
+    slack_webhook: Optional[str] = None,
     slack_channel: str = "#hcc-ai-assistant",
+    memory_store_path: Optional[str] = None,
     reviewers: Optional[List[str]] = None,
     skip_operations: Optional[List[str]] = None,
     dry_run: bool = False,
@@ -549,9 +553,13 @@ def execute_post_pr_workflow(
         pr_number: PR number
         ticket_id: JIRA ticket ID
         summary: PR summary
-        github_token: GitHub API token (falls back to GITHUB_TOKEN env var)
-        jira_token: JIRA API token (falls back to POST_PR_JIRA_TOKEN env var)
+        github_token: GitHub API token (optional, defaults to env var)
+        jira_url: JIRA instance URL (optional, defaults to env var)
+        jira_token: JIRA API token (optional, defaults to env var)
+        jira_email: JIRA user email (optional, defaults to env var)
+        slack_webhook: Slack webhook URL (optional, defaults to env var)
         slack_channel: Slack channel for notifications
+        memory_store_path: Path to memory storage file (optional, defaults to env var)
         reviewers: List of GitHub usernames to request as reviewers
         skip_operations: List of operations to skip
         dry_run: Show what would be done without executing
@@ -559,14 +567,22 @@ def execute_post_pr_workflow(
     Returns:
         WorkflowResult with status and operation results
     """
+    # Resolve configuration from environment variables
+    github_token = github_token or os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+    jira_url = jira_url or os.getenv("POST_PR_JIRA_URL", "https://redhat.atlassian.net")
+    jira_token = jira_token or os.getenv("POST_PR_JIRA_TOKEN")
+    jira_email = jira_email or os.getenv("POST_PR_JIRA_EMAIL", "")
+    slack_webhook = slack_webhook or os.getenv("POST_PR_SLACK_WEBHOOK")
+    memory_store_path = memory_store_path or os.getenv("POST_PR_MEMORY_STORE", "/tmp/memory.json")
+
     skip_operations = skip_operations or []
     operations = PostPROperations(
         github_token=github_token,
-        jira_url=os.getenv("POST_PR_JIRA_URL", "https://redhat.atlassian.net"),
+        jira_url=jira_url,
         jira_token=jira_token,
-        jira_email=os.getenv("POST_PR_JIRA_EMAIL", ""),
-        slack_webhook=os.getenv("POST_PR_SLACK_WEBHOOK"),
-        memory_store_path=os.getenv("POST_PR_MEMORY_STORE", "/tmp/memory.json"),
+        jira_email=jira_email,
+        slack_webhook=slack_webhook,
+        memory_store_path=memory_store_path,
         dry_run=dry_run,
     )
 
