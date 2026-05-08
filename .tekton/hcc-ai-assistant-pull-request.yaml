@@ -285,6 +285,28 @@ spec:
           volumeMounts:
           - mountPath: /var/workdir
             name: workdir
+        - name: test-wrap-up-skill
+          image: registry.access.redhat.com/ubi9/python-312:latest
+          workingDir: /var/workdir
+          script: |
+            #!/bin/bash
+            set -e
+            echo "Running wrap-up skill tests (30 tests)..."
+            # Copy skill to writable workspace
+            cp -r /var/workdir/source/.claude/skills/wrap-up /var/workdir/wrap-up-test
+            cd /var/workdir/wrap-up-test
+            # Install dependencies with uv (including dev extras for pytest)
+            pip install --quiet uv
+            uv sync --frozen --all-extras
+            # Run tests
+            uv run pytest -v || {
+              echo "Wrap-up skill tests failed!"
+              exit 1
+            }
+            echo "Wrap-up skill tests passed!"
+          volumeMounts:
+          - mountPath: /var/workdir
+            name: workdir
         volumes:
         - name: workdir
           emptyDir: {}
