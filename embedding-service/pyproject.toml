@@ -5,7 +5,7 @@ description = "Embedding Service - Unified embedding generation and vector stora
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",
-    "uvicorn[standard]==0.32.0",
+    "uvicorn[standard]==0.48.0",
     "sentence-transformers>=3.2.0",
     "torch>=2.9.0",
     "numpy>=2.0.0",
