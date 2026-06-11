@@ -16,7 +16,10 @@ RUN pip3.12 install "uv>=0.8.15" && \
         "psycopg2-binary>=2.9.0" \
         "pgvector>=0.3.0" \
         "mcp[cli]==1.26.0" \
-        "httpx>=0.27.0"
+        "httpx>=0.27.0" \
+        "litellm>=1.88.0" \
+        "aiohttp>=3.13.5" \
+        "cryptography>=46.0.7"
 
 # Pre-download the embedding model into the image (~420MB).
 # HF_HOME must be set before download so the cache lands in a group-writable
