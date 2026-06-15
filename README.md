@@ -1,4 +1,4 @@
-# AI Assistant Service
+# AI Assistant Service 
 
 HTTP-based AI assistant service using LightSpeed stack with Google Vertex AI and MCP (Model Context Protocol) discovery capabilities.
 
