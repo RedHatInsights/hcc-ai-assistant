@@ -5,6 +5,7 @@ import pytest
 import yaml
 
 from entrypoint import (
+    add_normalized_model_names,
     load_mcp_server_configs,
     merge_mcp_servers,
 )
@@ -281,6 +282,87 @@ class TestMergeMcpServers:
 
         server = base_stack_config["mcp_servers"][0]
         assert server["url"] == "http://fallback/mcp/"
+
+
+# ============================================================================
+# add_normalized_model_names TESTS
+# ============================================================================
+
+class TestAddNormalizedModelNames:
+
+    def test_adds_normalized_name(self, monkeypatch):
+        monkeypatch.setenv("ALLOWED_MODEL", "publishers/google/models/gemini-2.5-flash")
+        run_config = {
+            "providers": {
+                "inference": [
+                    {"provider_id": "google-vertex", "config": {"allowed_models": ["publishers/google/models/gemini-2.5-flash"]}}
+                ]
+            }
+        }
+
+        add_normalized_model_names(run_config)
+
+        allowed = run_config["providers"]["inference"][0]["config"]["allowed_models"]
+        assert "publishers/google/models/gemini-2.5-flash" in allowed
+        assert "google/gemini-2.5-flash" in allowed
+
+    def test_skips_non_publishers_format(self, monkeypatch):
+        monkeypatch.setenv("ALLOWED_MODEL", "google/gemini-2.5-flash")
+        run_config = {
+            "providers": {
+                "inference": [
+                    {"provider_id": "google-vertex", "config": {"allowed_models": ["google/gemini-2.5-flash"]}}
+                ]
+            }
+        }
+
+        add_normalized_model_names(run_config)
+
+        allowed = run_config["providers"]["inference"][0]["config"]["allowed_models"]
+        assert allowed == ["google/gemini-2.5-flash"]
+
+    def test_skips_when_no_env_var(self, monkeypatch):
+        monkeypatch.delenv("ALLOWED_MODEL", raising=False)
+        run_config = {
+            "providers": {
+                "inference": [
+                    {"provider_id": "google-vertex", "config": {"allowed_models": []}}
+                ]
+            }
+        }
+
+        add_normalized_model_names(run_config)
+
+        assert run_config["providers"]["inference"][0]["config"]["allowed_models"] == []
+
+    def test_no_duplicate_if_already_present(self, monkeypatch):
+        monkeypatch.setenv("ALLOWED_MODEL", "publishers/google/models/gemini-2.5-flash")
+        run_config = {
+            "providers": {
+                "inference": [
+                    {"provider_id": "google-vertex", "config": {"allowed_models": ["publishers/google/models/gemini-2.5-flash", "google/gemini-2.5-flash"]}}
+                ]
+            }
+        }
+
+        add_normalized_model_names(run_config)
+
+        allowed = run_config["providers"]["inference"][0]["config"]["allowed_models"]
+        assert allowed.count("google/gemini-2.5-flash") == 1
+
+    def test_skips_provider_without_allowed_models(self, monkeypatch):
+        monkeypatch.setenv("ALLOWED_MODEL", "publishers/google/models/gemini-2.5-flash")
+        run_config = {
+            "providers": {
+                "inference": [
+                    {"provider_id": "sentence-transformers", "config": {}}
+                ]
+            }
+        }
+
+        add_normalized_model_names(run_config)
+
+        assert "allowed_models" not in run_config["providers"]["inference"][0]["config"]
 
 
 # ============================================================================
