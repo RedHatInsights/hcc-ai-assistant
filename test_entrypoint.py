@@ -9,7 +9,6 @@ from entrypoint import (
     merge_mcp_servers,
 )
 
-
 # ============================================================================
 # FIXTURES
 # ============================================================================
@@ -189,7 +188,8 @@ class TestMergeMcpServers:
             port = 9999
 
         class FakeClowder:
-            endpoints = [FakeEndpoint()]
+            def __init__(self):
+                self.endpoints = [FakeEndpoint()]
 
         merge_mcp_servers(base_run_config, base_stack_config, clowder=FakeClowder())
 
@@ -275,7 +275,8 @@ class TestMergeMcpServers:
             port = 1234
 
         class FakeClowder:
-            endpoints = [FakeEndpoint()]
+            def __init__(self):
+                self.endpoints = [FakeEndpoint()]
 
         merge_mcp_servers(base_run_config, base_stack_config, clowder=FakeClowder())
 

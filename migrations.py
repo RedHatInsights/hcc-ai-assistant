@@ -9,7 +9,6 @@ import os
 import psycopg2
 from psycopg2 import sql
 
-
 LOG_PREFIX = "[migrations]"
 
 
@@ -97,7 +96,7 @@ def run_migrations():
     try:
         conn = psycopg2.connect(**db_config)
         conn.autocommit = True
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - migration failures must not block service startup
         print(f"{LOG_PREFIX} Could not connect to database: {e}")
         return
 
