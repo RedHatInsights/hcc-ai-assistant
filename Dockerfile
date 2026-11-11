@@ -1,4 +1,4 @@
-FROM registry.redhat.io/lightspeed-core/lightspeed-stack-rhel9:0.6-latest
+FROM registry.redhat.io/lightspeed-core/lightspeed-stack-rhel9:0.7.3
 
 USER root
 
