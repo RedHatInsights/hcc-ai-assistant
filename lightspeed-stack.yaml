@@ -27,6 +27,10 @@ conversation_cache:
   sqlite:
     db_path: "/tmp/data/conversation-cache.db"  # Persistent across requests, can be deleted between test runs
 
+inference:
+  default_model: ${env.ALLOWED_MODEL}
+  default_provider: google-vertex
+
 authentication:
   module: "rh-identity"
   skip_for_health_probes: true
@@ -56,7 +60,7 @@ shields:
   - name: hcc-topic-guard
     provider_id: question_validity
     config:
-      model_id: ${env.ALLOWED_MODEL}
+      model_id: google-vertex/${env.ALLOWED_MODEL}
       model_prompt: |
         Determine whether the user's question is relevant to the Hybrid Cloud Console,
         Red Hat cloud services, RHEL, OpenShift, Kubernetes, or related infrastructure

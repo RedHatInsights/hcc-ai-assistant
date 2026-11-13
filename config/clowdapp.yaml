@@ -92,6 +92,10 @@ objects:
             value: ${SQL_STORE_PATH}
           - name: GOOGLE_APPLICATION_CREDENTIALS
             value: ${VERTEX_SECRET_PATH}
+          # LCORE requires an anonymization secret when OTEL is enabled.
+          # Tracing is not provisioned for this deployment, so disable it explicitly.
+          - name: OTEL_SDK_DISABLED
+            value: "true"
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
           - name: CLOWDER_MCP_SERVER_CONFIGS
