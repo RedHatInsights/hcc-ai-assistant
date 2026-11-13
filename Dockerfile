@@ -1,9 +1,10 @@
-FROM registry.redhat.io/lightspeed-core/lightspeed-stack-rhel9:0.6-latest
+FROM registry.redhat.io/lightspeed-core/lightspeed-stack-rhel9:0.7.3
 
 USER root
 
 # Install uv, then torch CPU-only first (avoids pulling ~6GB CUDA libs),
-# then everything else from PyPI
+# then everything else from PyPI. Pin PyArrow because 0.7.3 ships libthrift
+# 0.24 while PyArrow 25.0.1 expects the older ABI.
 RUN pip3.12 install "uv>=0.8.15" && \
     uv pip install --python /app-root/.venv/bin/python \
         --index-url https://download.pytorch.org/whl/cpu \
@@ -11,6 +12,7 @@ RUN pip3.12 install "uv>=0.8.15" && \
     uv pip install --python /app-root/.venv/bin/python \
         --index-url https://pypi.org/simple/ \
         app-common-python pyyaml \
+        "pyarrow==25.0.0" \
         "sentence-transformers>=3.2.0" \
         "numpy>=2.0.0" \
         "psycopg2-binary>=2.9.0" \
