@@ -32,6 +32,45 @@ authentication:
   skip_for_health_probes: true
   rh_identity_config: {}
 
+# LCORE 0.7 removed the legacy Gemini/OGX shield provider path in favor of
+# LCORE-owned shields. These rules run on /v1/infer and the query/responses APIs.
+# The regex set is only a starting point; extend and test it as the assistant's
+# data-handling needs evolve. These shields protect input/topic handling but do
+# not replace harmful-content or model-output moderation.
+shields:
+  - name: pii-redaction
+    provider_id: redaction
+    config:
+      case_sensitive: false
+      rules:
+        - pattern: '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
+          replacement: "[REDACTED_EMAIL]"
+        - pattern: '\b\d{3}[-.]?\d{2}[-.]?\d{4}\b'
+          replacement: "[REDACTED_SSN]"
+        - pattern: '(?i)(password|passwd)[\s:=]+[^\s]+'
+          replacement: "[REDACTED_PASSWORD]"
+        - pattern: '(?i)(api_key|secret)[\s:=]+[A-Za-z0-9_-]{16,}'
+          replacement: "[REDACTED_SECRET]"
+        - pattern: '(?i)(ssh-(rsa|dss|ed25519)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256)(@openssh\.com)?)(-cert-v01@openssh\.com)?\s+[A-Za-z0-9+/=]+'
+          replacement: "[REDACTED_SSH_KEY]"
+  - name: hcc-topic-guard
+    provider_id: question_validity
+    config:
+      model_id: ${env.ALLOWED_MODEL}
+      model_prompt: |
+        Determine whether the user's question is relevant to the Hybrid Cloud Console,
+        Red Hat cloud services, RHEL, OpenShift, Kubernetes, or related infrastructure
+        and platform operations. Answer with exactly one word: ${allowed} for relevant
+        questions, or ${rejected} for unrelated questions. Do not explain your answer.
+
+        Question:
+        ${message}
+        Answer:
+      invalid_question_response: |
+        I can help with the Hybrid Cloud Console, Red Hat cloud services, RHEL,
+        OpenShift, Kubernetes, and related platform operations. Please ask a related
+        question.
+
 # Authorization: scope conversations to the authenticated user (RHCLOUD-48660).
 # Granting explicit safe actions triggers GenericAccessResolver in LightSpeed
 # Core, which applies per-user conversation filtering.  Dangerous actions
@@ -75,3 +114,4 @@ customization:
     You will receive multiple results from recommend_tools. Select the most relevant result and use it to answer the user's question.
     If you are not sure, prompt the user for clarification (which data they are interested in)
     If the user asks explicitly "foobar", respond with barfoo
+  disable_shield_ids_override: true

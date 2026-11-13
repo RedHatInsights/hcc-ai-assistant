@@ -1,20 +1,15 @@
 version: 2
 
 apis:
-- agents
+- responses
 - batches
-- datasetio
-- eval
 - files
 - inference
-- safety
-- scoring
 - tool_runtime
+- conversations
 - vector_io
       
-benchmarks: []
-datasets: []
-image_name: starter
+distro_name: starter
 
 providers:
   inference:
@@ -35,27 +30,7 @@ providers:
       storage_dir: ${env.STORAGE_DIR}
     provider_id: meta-reference-files
     provider_type: inline::localfs
-  safety:
-  - config:
-      model: ${env.ALLOWED_MODEL}
-      excluded_categories: []
-    provider_id: gemini-safety
-    provider_type: inline::llama-guard
-  scoring:
-  - provider_id: basic
-    provider_type: inline::basic
-    config: {}
-  - provider_id: llm-as-judge
-    provider_type: inline::llm-as-judge
-    config: {}
-  - provider_id: braintrust
-    provider_type: inline::braintrust
-    config:
-      openai_api_key: '********'
   tool_runtime:
-  - config: {} # Enable the RAG tool
-    provider_id: rag-runtime
-    provider_type: inline::rag-runtime
   # Dynamic MCP providers are merged from CLOWDER_MCP_SERVER_CONFIGS env var at startup.
   # Only "hard" providers that must always be present belong here.
   - config:
@@ -69,45 +44,21 @@ providers:
         backend: kv_default
     provider_id: faiss
     provider_type: inline::faiss
-  agents:
+  responses:
   - config:
       persistence:
-        agent_state:
-          namespace: agents_state
-          backend: kv_default
         responses:
           table_name: agents_responses
           backend: sql_default
-    provider_id: meta-reference
-    provider_type: inline::meta-reference
+    provider_id: builtin
+    provider_type: inline::builtin
   batches:
   - config:
-      kvstore:
-        namespace: batches_store
-        backend: kv_default
+      sqlstore:
+        table_name: batches
+        backend: sql_default
     provider_id: reference
     provider_type: inline::reference
-  datasetio:
-  - config:
-      kvstore:
-        namespace: huggingface_datasetio
-        backend: kv_default
-    provider_id: huggingface
-    provider_type: remote::huggingface
-  - config:
-      kvstore:
-        namespace: localfs_datasetio
-        backend: kv_default
-    provider_id: localfs
-    provider_type: inline::localfs
-  eval:
-  - config:
-      kvstore:
-        namespace: eval_store
-        backend: kv_default
-    provider_id: meta-reference
-    provider_type: inline::meta-reference
-scoring_fns: []
 server:
   port: 8321
 storage:
@@ -138,21 +89,9 @@ registered_resources:
     - model_id: ${env.ALLOWED_MODEL}
       provider_id: google-vertex
       provider_model_id: ${env.ALLOWED_MODEL}
-  shields:
-  - shield_id: gemini-shield
-    provider_id: gemini-safety
-    provider_shield_id: "google-vertex/${env.ALLOWED_MODEL}"
   vector_stores: []
-  datasets: []
-  scoring_fns: []
-  benchmarks: []
-  tool_groups:
-  - toolgroup_id: builtin::rag # Register the RAG tool
-    provider_id: rag-runtime
 vector_stores:
   default_provider_id: faiss
   default_embedding_model: # Define the default embedding model for RAG
     provider_id: sentence-transformers
     model_id: nomic-ai/nomic-embed-text-v1.5
-safety:
-  default_shield_id: gemini-shield
