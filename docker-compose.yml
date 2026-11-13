@@ -35,6 +35,7 @@
         - ALLOWED_MODEL=${ALLOWED_MODEL}
         - GOOGLE_API_KEY=${GOOGLE_API_KEY}
         - GOOGLE_CLOUD_PROJECT=${VERTEX_PROJECT}
+        - OTEL_SDK_DISABLED=true
         - LIGHTSPEED_STACK_CONFIG_PATH=/app-root/lightspeed-stack.yaml
         - GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json
         - KV_STORE_PATH=/app-root/.llama/storage/rag/kv_store.db
