@@ -219,6 +219,30 @@ def apply_clowder_config(run_config, stack_config, clowder):
     return run_config, stack_config
 
 
+def add_normalized_model_names(run_config):
+    """Add normalized Vertex AI model names to allowed_models.
+
+    llama-stack 0.6.x normalizes 'publishers/google/models/X' to 'google/X'
+    internally before checking the allowed list. Add both formats so the
+    validation passes.
+    """
+    import re
+
+    allowed_model = os.environ.get("ALLOWED_MODEL", "")
+    match = re.match(r"^publishers/([^/]+)/models/(.+)$", allowed_model)
+    if not match:
+        return
+
+    normalized = f"{match.group(1)}/{match.group(2)}"
+
+    for provider in run_config.get("providers", {}).get("inference", []):
+        config = provider.get("config", {})
+        allowed = config.get("allowed_models")
+        if allowed is not None and normalized not in allowed:
+            allowed.append(normalized)
+            print(f"[entrypoint] Added normalized model name '{normalized}' to allowed_models")
+
+
 def render_configs(clowder):
     """Read template YAMLs, apply Clowder config, write to runtime dir.
 
@@ -237,6 +261,7 @@ def render_configs(clowder):
 
     run_config, stack_config = apply_clowder_config(run_config, stack_config, clowder)
     merge_mcp_servers(run_config, stack_config, clowder)
+    add_normalized_model_names(run_config)
 
     run_out = os.path.join(RUNTIME_DIR, RUN_YAML)
     stack_out = os.path.join(RUNTIME_DIR, STACK_YAML)
