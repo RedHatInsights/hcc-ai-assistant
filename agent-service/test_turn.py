@@ -15,7 +15,7 @@ import httpx
 import psycopg2
 import pytest
 import yaml
-from pydantic_ai.messages import ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
 from turn import create_app
 
@@ -48,8 +48,8 @@ def start_backend(monkeypatch, calls, tmp_path, verdict):
         return ModelResponse(parts=[TextPart("Synthetic console answer")])
 
     @asynccontextmanager
-    async def start():
-        backend = create_app(model=FunctionModel(respond))
+    async def start(model_response=respond):
+        backend = create_app(model=FunctionModel(model_response))
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=backend)) as upstream:
             monkeypatch.setattr(proxy.app, "state",
                                 SimpleNamespace(client=upstream))
@@ -83,6 +83,111 @@ def caller_headers(tenant="org-a", user_id="test-id", username="synthetic-user")
                                                    "user": {"user_id": user_id, "username": username}}})}
 
 
+@pytest.fixture
+def tool_servers(tmp_path, monkeypatch):
+    config = yaml.safe_load((Path(__file__).resolve().parents[1] / "lightspeed-stack.yaml").read_text())
+    config["mcp_servers"] = [
+        {"name": "mcp-discovery-server", "url": "http://discovery.test/mcp", "headers": ["X-Trace"]},
+        {"name": "inventory", "url": "http://inventory.test/mcp/", "headers": ["X-Rh-Identity"]},
+    ]
+    config_path = tmp_path / "servers.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    monkeypatch.setenv("MCP_CONFIG_PATH", str(config_path))
+    requests = []
+    capability = {"server_name": "inventory", "tool_name": "lookup", "description": "Find hosts", "input_schema": {}}
+
+    async def dispatch(self, request):
+        body = json.loads(await request.aread())
+        method = body["method"]
+        requests.append((request.url.host, method, dict(request.headers), body.get("params", {})))
+        if method == "initialize":
+            result = {"protocolVersion": body["params"]["protocolVersion"], "capabilities": {"tools": {}},
+                      "serverInfo": {"name": "fixture", "version": "1"}}
+        elif method == "notifications/initialized":
+            return httpx.Response(202)
+        elif method == "tools/list":
+            name = "lookup" if request.url.host == "inventory.test" else "recommend_tools"
+            result = {"tools": [{"name": name, "inputSchema": {"type": "object"}}]}
+        elif method == "tools/call":
+            if request.url.host == "discovery.test":
+                text = "Recommended 1 tools for task 'hosts' (via vector):\n\n" + json.dumps([capability])
+            else:
+                assert request.url.host == "inventory.test"
+                assert body["params"]["arguments"] == {"region": "west"}
+                text = "host-83c19"
+            result = {"content": [{"type": "text", "text": text}]}
+        else:
+            pytest.fail(f"Unexpected MCP request: {body}")
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": result})
+
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", dispatch)
+    return requests, capability
+
+
+async def test_discovered_tool_answer_uses_current_caller(start_backend, tool_servers):
+    requests, _ = tool_servers
+
+    def respond(messages, info):
+        model_input = repr((messages, info.instructions, info.model_settings))
+        for value in ("synthetic-auth-only", "trace-first", "trace-second",
+                  caller_headers(user_id="first")["x-rh-identity"], caller_headers(user_id="second")["x-rh-identity"]):
+            assert value not in model_input
+        part = messages[-1].parts[-1]
+        if not info.function_tools and "Determine whether" in str(part.content):
+            return ModelResponse(parts=[TextPart("ALLOWED")])
+        if isinstance(part, UserPromptPart):
+            assert "recommend_tools" in [tool.name for tool in info.function_tools]
+            return ModelResponse(parts=[ToolCallPart("recommend_tools", {"task": "hosts"})])
+        assert isinstance(part, ToolReturnPart)
+        if part.tool_name == "recommend_tools":
+            assert "lookup" in str(part.content)
+            return ModelResponse(parts=[ToolCallPart("execute_tool", {"server_name": "inventory", "tool_name": "lookup",
+                                                                     "arguments": {"region": "west"}})])
+        return ModelResponse(parts=[TextPart(str(part.content))])
+
+    async with start_backend(respond) as client:
+        for caller in ("first", "second"):
+            requests.clear()
+            headers = caller_headers(user_id=caller) | {"x-trace": f"trace-{caller}", "authorization": "synthetic-auth-only"}
+            response = await client.post("/api/ai-assistant/v1/query", headers=headers, json={"query": "Find my hosts"})
+            assert response.json()["response"] == "host-83c19"
+            assert [(host, params["name"]) for host, method, _, params in requests if method == "tools/call"] == [
+                ("discovery.test", "recommend_tools"), ("inventory.test", "lookup")]
+            for host, _, observed, _ in requests:
+                expected = {"x-trace": f"trace-{caller}"} if host == "discovery.test" else caller_headers(user_id=caller)
+                assert {key: observed[key] for key in headers if key in observed} == expected
+
+
+@pytest.mark.parametrize(("recommended_server", "recommended_tool", "target", "tool"), [
+    ("inventory", "gone", "inventory", "gone"),
+    ("inventory", "lookup", "inventory", "other"),
+    ("http://unregistered.test", "lookup", "http://unregistered.test", "lookup"),
+    ("inventory", "lookup", "http://inventory.test/mcp/", "lookup"),
+])
+async def test_only_exact_available_recommendation_can_execute(start_backend, tool_servers, recommended_server,
+                                                              recommended_tool, target, tool):
+    requests, capability = tool_servers
+    capability.update(server_name=recommended_server, tool_name=recommended_tool)
+
+    def respond(messages, info):
+        part = messages[-1].parts[-1]
+        if not info.function_tools:
+            return ModelResponse(parts=[TextPart("ALLOWED")])
+        if isinstance(part, UserPromptPart):
+            return ModelResponse(parts=[ToolCallPart("recommend_tools", {"task": "hosts"})])
+        if isinstance(part, ToolReturnPart) and part.tool_name == "recommend_tools":
+            selection = {"server_name": target, "tool_name": tool, "arguments": {}}
+            return ModelResponse(parts=[ToolCallPart("execute_tool", selection)])
+        return ModelResponse(parts=[TextPart("No available tool")])
+
+    async with start_backend(respond) as client:
+        response = await client.post("/api/ai-assistant/v1/query", headers=caller_headers(), json={"query": "hosts"})
+        assert response.json()["response"] == "No available tool"
+    for host, method, _, _ in requests:
+        if host != "discovery.test":
+            assert host == "inventory.test" and tool == "gone" and method != "tools/call"
+
+
 async def test_sensitive_console_turn(client, calls, tmp_path):
     values = ["example@example.test", "123-45-6789", "PASSWD=mock-pass", "secret:synthetic_token_1234",
               "ssh-ed25519 AAAAtest"]
@@ -100,8 +205,33 @@ async def test_sensitive_console_turn(client, calls, tmp_path):
         assert value not in repr(calls) and value not in history
 
 
+async def test_followup_requires_new_recommendation(start_backend, tool_servers):
+    requests, _ = tool_servers
+
+    def respond(messages, info):
+        part = messages[-1].parts[-1]
+        if not info.function_tools:
+            return ModelResponse(parts=[TextPart("ALLOWED")])
+        if isinstance(part, UserPromptPart):
+            if part.content == "Find tools":
+                return ModelResponse(parts=[ToolCallPart("recommend_tools", {"task": "hosts"})])
+            return ModelResponse(parts=[ToolCallPart("execute_tool", {"server_name": "inventory", "tool_name": "lookup",
+                                                                     "arguments": {"region": "west"}})])
+        return ModelResponse(parts=[TextPart(str(part.content))])
+
+    path = "/api/ai-assistant/v1/query"
+    async with start_backend(respond) as client:
+        first = await client.post(path, headers=caller_headers(), json={"query": "Find tools"})
+        assert "lookup" in first.json()["response"]
+        requests.clear()
+        followup = await client.post(path, headers=caller_headers(), json={"query": "Use the same tool",
+                                                                          "conversation_id": first.json()["conversation_id"]})
+        assert followup.status_code == 200
+        assert requests == []
+
+
 @pytest.mark.parametrize("verdict", ["REJECTED", "not ALLOWED", ""])
-async def test_topic_refusal(client, calls, verdict):
+async def test_topic_refusal(tool_servers, client, calls, verdict):
     response = await client.post("/api/ai-assistant/v1/query", headers=caller_headers(),
                                  json={"query": "Write a cake recipe for example@example.test"})
     assert response.status_code == 200
@@ -115,6 +245,7 @@ async def test_topic_refusal(client, calls, verdict):
     prompt = calls[0][0][-1].parts[-1].content
     assert "[REDACTED_EMAIL]" in prompt and "example@example.test" not in prompt
     assert "ALLOWED" in prompt and "REJECTED" in prompt and "${" not in prompt
+    assert tool_servers[0] == []
 
 
 async def test_restart_applies_current_rules_to_prior_history(start_backend, calls, tmp_path, monkeypatch):

@@ -20,6 +20,7 @@ from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 from pydantic_ai.usage import RunUsage
 
 from conversations import Conversations
+from discovered_tools import turn_tools
 
 
 class Turn(BaseModel):
@@ -73,6 +74,7 @@ def create_app(model: Model | None = None) -> FastAPI:
     config_path = Path(os.getenv("MCP_CONFIG_PATH", Path(
         __file__).resolve().parents[1] / "lightspeed-stack.yaml"))
     config = yaml.safe_load(config_path.read_text())
+    servers = {server["name"]: server for server in config.get("mcp_servers") or []}
     instructions = config["customization"]["system_prompt"]
     shields = {shield["name"]: shield["config"] for shield in config["shields"]}
     redaction = shields["pii-redaction"]
@@ -103,7 +105,7 @@ def create_app(model: Model | None = None) -> FastAPI:
         return {"ready": True}
 
     @app.post("/v1/query")
-    async def query(turn: Turn, owner: str = Depends(require_console_user)):
+    async def query(turn: Turn, request: Request, owner: str = Depends(require_console_user)):
         conversation_id = str(turn.conversation_id or uuid4())
         revision, history = 0, []
         if turn.conversation_id is not None:
@@ -125,7 +127,8 @@ def create_app(model: Model | None = None) -> FastAPI:
         except UnexpectedModelBehavior:
             allowed = False
         if allowed:
-            result = await agent.run(question, message_history=history, usage=usage)
+            result = await agent.run(question, message_history=history, usage=usage,
+                                     toolsets=[turn_tools(servers, request.headers)])
             answer = result.output
             history = result.all_messages()
         else:

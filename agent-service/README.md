@@ -4,10 +4,16 @@ The default deployment still runs lcore. This service is for a trusted, isolated
 test deployment only. It trusts a gateway-supplied `x-rh-identity`; base64 is not
 authentication. Do not expose it to untrusted callers or use real account data.
 Only synthetic console User identities and synchronous turns are in scope.
-There is no tool access or streaming. The agent applies the configured
+Streaming is not supported. The agent applies the configured
 `pii-redaction` rules before classification and storage. Only an explicit
 `ALLOWED` verdict from the tool-free `hcc-topic-guard` classifier starts an
 answer turn. Rejected questions are not added to the conversation history.
+
+For tool-backed turns, point `MCP_CONFIG_PATH` at the rendered stack YAML with
+the discovery and downstream `mcp_servers` registrations. The agent uses their
+Streamable HTTP URLs as configured. Each connection forwards only that server's
+listed caller headers. A downstream call must match a recommendation from the
+current turn and a tool still advertised by that server to this caller.
 
 From the repository root, run the offline proxy tests:
 
@@ -36,7 +42,8 @@ PROXY_BACKEND_URL=http://127.0.0.1:8080 uv run --project agent-service --locked 
 Use `POST /api/ai-assistant/v1/query` with a JSON `query` and a trusted test
 identity with `org_id`, `user.user_id`, and `user.username`. Omit `conversation_id`
 to start a chat; send the returned ID on the same route to continue. Only the
-question, prior model messages, and configured instructions go to the model.
+redacted question, conversation context, instructions, tool definitions and tool
+results go to the answer model; caller headers are not model settings or prompts.
 `GET /readiness` means the proxy can reach the initialized agent, not that Vertex
 has accepted credentials or has quota. `GET /liveness` is independent of the agent.
 
