@@ -84,11 +84,17 @@ def caller_headers(tenant="org-a", user_id="test-id", username="synthetic-user")
 
 
 @pytest.fixture
-def tool_servers(tmp_path, monkeypatch):
+def host_id():
+    return "host-83c19"
+
+
+@pytest.fixture
+def tool_servers(tmp_path, monkeypatch, host_id):
     config = yaml.safe_load((Path(__file__).resolve().parents[1] / "lightspeed-stack.yaml").read_text())
     config["mcp_servers"] = [
         {"name": "mcp-discovery-server", "url": "http://discovery.test/mcp", "headers": ["X-Trace"]},
         {"name": "inventory", "url": "http://inventory.test/mcp/", "headers": ["X-Rh-Identity"]},
+        {"name": "advisor", "url": "http://advisor.test/mcp", "headers": ["X-Account"]},
     ]
     config_path = tmp_path / "servers.yaml"
     config_path.write_text(yaml.safe_dump(config))
@@ -106,15 +112,23 @@ def tool_servers(tmp_path, monkeypatch):
         elif method == "notifications/initialized":
             return httpx.Response(202)
         elif method == "tools/list":
-            name = "lookup" if request.url.host == "inventory.test" else "recommend_tools"
+            name = {"inventory.test": "lookup", "advisor.test": "risk", "discovery.test": "recommend_tools"}[request.url.host]
             result = {"tools": [{"name": name, "inputSchema": {"type": "object"}}]}
         elif method == "tools/call":
             if request.url.host == "discovery.test":
-                text = "Recommended 1 tools for task 'hosts' (via vector):\n\n" + json.dumps([capability])
+                task = body["params"]["arguments"]["task"]
+                choices = [capability]
+                if task == "host risk":
+                    choices.append({"server_name": "advisor", "tool_name": "risk", "description": "Get host risk",
+                                    "input_schema": {}})
+                text = f"Recommended {len(choices)} tools for task '{task}' (via vector):\n\n" + json.dumps(choices)
+            elif request.url.host == "advisor.test":
+                assert body["params"]["arguments"] == {"host_id": host_id}
+                text = "elevated"
             else:
                 assert request.url.host == "inventory.test"
                 assert body["params"]["arguments"] == {"region": "west"}
-                text = "host-83c19"
+                text = host_id
             result = {"content": [{"type": "text", "text": text}]}
         else:
             pytest.fail(f"Unexpected MCP request: {body}")
@@ -156,6 +170,45 @@ async def test_discovered_tool_answer_uses_current_caller(start_backend, tool_se
             for host, _, observed, _ in requests:
                 expected = {"x-trace": f"trace-{caller}"} if host == "discovery.test" else caller_headers(user_id=caller)
                 assert {key: observed[key] for key in headers if key in observed} == expected
+
+
+@pytest.mark.parametrize("host_id", ["host-42a7", "host-6b90"])
+async def test_dependent_tool_answer_in_one_turn(start_backend, tool_servers, host_id):
+    requests, _ = tool_servers
+
+    def respond(messages, info):
+        part = messages[-1].parts[-1]
+        if not info.function_tools:
+            return ModelResponse(parts=[TextPart("ALLOWED")])
+        if isinstance(part, UserPromptPart):
+            return ModelResponse(parts=[ToolCallPart("recommend_tools", {"task": "host risk"})])
+        assert isinstance(part, ToolReturnPart)
+        if part.tool_name == "recommend_tools":
+            assert {(item["server_name"], item["tool_name"]) for item in part.content} == {
+                ("inventory", "lookup"), ("advisor", "risk")}
+            return ModelResponse(parts=[ToolCallPart("execute_tool", {"server_name": "inventory", "tool_name": "lookup",
+                                                                     "arguments": {"region": "west"}})])
+        results = [item.content for message in messages for item in message.parts
+                   if isinstance(item, ToolReturnPart) and item.tool_name == "execute_tool"]
+        if len(results) == 1:
+            return ModelResponse(parts=[ToolCallPart("execute_tool", {"server_name": "advisor", "tool_name": "risk",
+                                                                     "arguments": {"host_id": results[0]}})])
+        resource, risk = results
+        return ModelResponse(parts=[TextPart(f"{resource} has {risk} risk")])
+
+    identity = caller_headers()
+    policies = {"inventory.test": identity, "advisor.test": {"x-account": "test-account"},
+                "discovery.test": {"x-trace": "test-trace"}}
+    headers = identity | policies["advisor.test"] | policies["discovery.test"] | {"authorization": "not-forwarded"}
+    async with start_backend(respond) as client:
+        response = await client.post("/api/ai-assistant/v1/query", headers=headers,
+                                     json={"query": "What is the risk for my western host?"})
+    assert response.status_code == 200
+    assert response.json()["response"] == f"{host_id} has elevated risk"
+    assert [(host, params["name"]) for host, method, _, params in requests if method == "tools/call"] == [
+        ("discovery.test", "recommend_tools"), ("inventory.test", "lookup"), ("advisor.test", "risk")]
+    for host, _, observed, _ in requests:
+        assert {key: observed[key] for key in headers if key in observed} == policies[host]
 
 
 @pytest.mark.parametrize(("recommended_server", "recommended_tool", "target", "tool"), [
