@@ -3,17 +3,21 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
+from string import Template
 from typing import Literal
 from uuid import UUID, uuid4
 
 import yaml
 from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
-from pydantic_ai import Agent, ModelMessagesTypeAdapter
+from pydantic_ai import Agent, ModelMessagesTypeAdapter, UnexpectedModelBehavior
+from pydantic_ai.messages import TextPart, UserPromptPart
 from pydantic_ai.models import Model
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google_cloud import GoogleCloudProvider
+from pydantic_ai.usage import RunUsage
 
 from conversations import Conversations
 
@@ -68,8 +72,18 @@ async def require_console_user(request: Request) -> str:
 def create_app(model: Model | None = None) -> FastAPI:
     config_path = Path(os.getenv("MCP_CONFIG_PATH", Path(
         __file__).resolve().parents[1] / "lightspeed-stack.yaml"))
-    instructions = yaml.safe_load(config_path.read_text())[
-        "customization"]["system_prompt"]
+    config = yaml.safe_load(config_path.read_text())
+    instructions = config["customization"]["system_prompt"]
+    shields = {shield["name"]: shield["config"] for shield in config["shields"]}
+    redaction = shields["pii-redaction"]
+    flags = 0 if redaction["case_sensitive"] else re.IGNORECASE
+    rules = [(re.compile(rule["pattern"], flags), rule["replacement"]) for rule in redaction["rules"]]
+
+    def redact(text: str) -> str:
+        for pattern, replacement in rules:
+            text = pattern.sub(replacement, text)
+        return text
+
     if not isinstance(instructions, str) or not instructions.strip():
         raise ValueError("Missing customization.system_prompt")
     if model is None:
@@ -77,6 +91,10 @@ def create_app(model: Model | None = None) -> FastAPI:
             project=os.environ["VERTEX_PROJECT"], location=os.environ["VERTEX_LOCATION"])
         model = GoogleModel(os.environ["ALLOWED_MODEL"], provider=provider)
     agent = Agent(model, instructions=instructions)
+    classifier = Agent(model, retries=0)
+    guard = shields["hcc-topic-guard"]
+    prompt = Template(guard["model_prompt"])
+    refusal = guard["invalid_question_response"]
     conversations = Conversations()
     app = FastAPI()
 
@@ -87,22 +105,38 @@ def create_app(model: Model | None = None) -> FastAPI:
     @app.post("/v1/query")
     async def query(turn: Turn, owner: str = Depends(require_console_user)):
         conversation_id = str(turn.conversation_id or uuid4())
-        revision, history = 0, None
+        revision, history = 0, []
         if turn.conversation_id is not None:
             previous = await asyncio.to_thread(conversations.load, owner, conversation_id)
             if previous is None:
                 raise HTTPException(404, "Conversation not found")
             revision, serialized = previous
             history = ModelMessagesTypeAdapter.validate_json(serialized)
-        result = await agent.run(turn.query, message_history=history)
+            for message in history:
+                for part in message.parts:
+                    if isinstance(part, (UserPromptPart, TextPart)) and isinstance(part.content, str):
+                        part.content = redact(part.content)
+        question = redact(turn.query)
+        usage = RunUsage()
+        try:
+            verdict = await classifier.run(prompt.substitute(message=question, allowed="ALLOWED", rejected="REJECTED"),
+                                           usage=usage)
+            allowed = verdict.output.strip() == "ALLOWED"
+        except UnexpectedModelBehavior:
+            allowed = False
+        if allowed:
+            result = await agent.run(question, message_history=history, usage=usage)
+            answer = result.output
+            history = result.all_messages()
+        else:
+            answer = refusal
         saved = await asyncio.to_thread(conversations.save, owner, conversation_id, revision,
-                                        result.all_messages_json().decode())
+                                        ModelMessagesTypeAdapter.dump_json(history).decode())
         if not saved:
             raise HTTPException(409, "Conversation changed during turn")
-        usage = result.usage
         return {
             "conversation_id": conversation_id,
-            "response": result.output,
+            "response": answer,
             "input_tokens": usage.input_tokens,
             "output_tokens": usage.output_tokens,
             "truncated": False,

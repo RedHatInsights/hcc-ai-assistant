@@ -2,6 +2,7 @@ import base64
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 from contextlib import closing
@@ -27,12 +28,20 @@ def calls():
 
 
 @pytest.fixture
-def start_backend(monkeypatch, calls, tmp_path):
+def verdict():
+    return "ALLOWED"
+
+
+@pytest.fixture
+def start_backend(monkeypatch, calls, tmp_path, verdict):
     monkeypatch.delenv("PGHOST", raising=False)
     monkeypatch.setenv("AGENT_SQLITE_PATH", str(tmp_path / "chat.sqlite"))
 
     def respond(messages, info):
         calls.append((messages, info.instructions))
+        if messages[-1].parts[-1].content.startswith("Determine whether the user's question"):
+            assert not info.function_tools
+            return ModelResponse(parts=[TextPart(verdict)])
         if any(isinstance(part, TextPart) and part.content == "Synthetic console answer"
                for message in messages for part in message.parts):
             return ModelResponse(parts=[TextPart("I remember the synthetic answer")])
@@ -74,6 +83,64 @@ def caller_headers(tenant="org-a", user_id="test-id", username="synthetic-user")
                                                    "user": {"user_id": user_id, "username": username}}})}
 
 
+async def test_sensitive_console_turn(client, calls, tmp_path):
+    values = ["example@example.test", "123-45-6789", "PASSWD=mock-pass", "secret:synthetic_token_1234",
+              "ssh-ed25519 AAAAtest"]
+    expected = "HCC: [REDACTED_EMAIL] [REDACTED_SSN] [REDACTED_PASSWORD] [REDACTED_SECRET] [REDACTED_SSH_KEY]"
+    response = await client.post("/api/ai-assistant/v1/query", headers=caller_headers(),
+                                 json={"query": "HCC: " + " ".join(values)})
+    assert response.json()["response"] == "Synthetic console answer"
+    assert len(calls) == 2
+    assert expected in calls[0][0][-1].parts[-1].content
+    assert calls[-1][0][-1].parts[-1].content == expected
+    with closing(sqlite3.connect(tmp_path / "chat.sqlite")) as conn:
+        history, = conn.execute("SELECT history FROM agent_conversations_v1").fetchone()
+    assert expected in history
+    for value in ("example@example.test", "123-45-6789", "mock-pass", "synthetic_token_1234", "AAAAtest"):
+        assert value not in repr(calls) and value not in history
+
+
+@pytest.mark.parametrize("verdict", ["REJECTED", "not ALLOWED", ""])
+async def test_topic_refusal(client, calls, verdict):
+    response = await client.post("/api/ai-assistant/v1/query", headers=caller_headers(),
+                                 json={"query": "Write a cake recipe for example@example.test"})
+    assert response.status_code == 200
+    body = response.json()
+    config = yaml.safe_load((Path(__file__).resolve().parents[1] / "lightspeed-stack.yaml").read_text())
+    guard = next(shield["config"] for shield in config["shields"] if shield["name"] == "hcc-topic-guard")
+    assert body["response"] == guard["invalid_question_response"]
+    assert body["tool_calls"] == body["tool_results"] == []
+    assert UUID(body["conversation_id"]).version == 4
+    assert len(calls) == 1
+    prompt = calls[0][0][-1].parts[-1].content
+    assert "[REDACTED_EMAIL]" in prompt and "example@example.test" not in prompt
+    assert "ALLOWED" in prompt and "REJECTED" in prompt and "${" not in prompt
+
+
+async def test_restart_applies_current_rules_to_prior_history(start_backend, calls, tmp_path, monkeypatch):
+    path = "/api/ai-assistant/v1/query"
+    async with start_backend() as client:
+        first = await client.post(path, headers=caller_headers(), json={"query": "Explain HCC for private-team"})
+        conversation_id = first.json()["conversation_id"]
+    config = yaml.safe_load((Path(__file__).resolve().parents[1] / "lightspeed-stack.yaml").read_text())
+    rules = next(shield["config"]["rules"] for shield in config["shields"] if shield["name"] == "pii-redaction")
+    rules.append({"pattern": "private-team|Synthetic console answer", "replacement": "[PRIVATE]"})
+    config_path = tmp_path / "policy.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    monkeypatch.setenv("MCP_CONFIG_PATH", str(config_path))
+    calls.clear()
+    async with start_backend() as restarted:
+        response = await restarted.post(path, headers=caller_headers(), json={"query": "And RHEL?",
+                                                                             "conversation_id": conversation_id})
+    assert response.status_code == 200
+    assert "Explain HCC for [PRIVATE]" in repr(calls)
+    for messages, _ in calls:
+        assert "private-team" not in repr(messages) and "Synthetic console answer" not in repr(messages)
+    with closing(sqlite3.connect(tmp_path / "chat.sqlite")) as conn:
+        history, = conn.execute("SELECT history FROM agent_conversations_v1").fetchone()
+    assert "private-team" not in history
+
+
 @pytest.fixture
 def isolated_postgres(monkeypatch, tmp_path):
     if not all(shutil.which(tool) for tool in ("initdb", "pg_ctl")):
@@ -110,7 +177,7 @@ async def test_postgres_owned_restart_preserves_existing_data(start_backend, iso
         body = {"query": "What did you say?", "conversation_id": conversation_id}
         denied = await restarted.post(path, headers=caller_headers(tenant="org-b"), json=body)
         assert denied.status_code == 404
-        assert len(calls) == 1
+        assert len(calls) == 2
         resumed = await restarted.post(path, headers=caller_headers(), json=body)
         assert resumed.status_code == 200
         assert resumed.json()["conversation_id"] == conversation_id
@@ -153,7 +220,7 @@ async def test_private_conversation(client, calls):
         denied = await client.post(path, headers=headers, json=followup)
         assert (denied.status_code, denied.json()) == (
             missing.status_code, missing.json())
-    assert len(calls) == 1
+    assert len(calls) == 2
     resumed = await client.post(path, headers=caller_headers(), json=followup)
     assert resumed.json()["response"] == "I remember the synthetic answer"
 
@@ -227,7 +294,7 @@ async def test_first_console_turn(client, calls):
     assert UUID(body["conversation_id"]).version == 4
     assert body["response"] == "Synthetic console answer"
     assert body["tool_calls"] == body["tool_results"] == []
-    ((messages, instructions),) = calls
+    _, (messages, instructions) = calls
     assert [part.content for msg in messages for part in msg.parts if isinstance(part, UserPromptPart)] == [
         "What is HCC?"
     ]

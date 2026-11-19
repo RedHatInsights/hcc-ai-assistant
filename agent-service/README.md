@@ -4,7 +4,10 @@ The default deployment still runs lcore. This service is for a trusted, isolated
 test deployment only. It trusts a gateway-supplied `x-rh-identity`; base64 is not
 authentication. Do not expose it to untrusted callers or use real account data.
 Only synthetic console User identities and synchronous turns are in scope.
-There is no tool access, input redaction, topic gate, or streaming.
+There is no tool access or streaming. The agent applies the configured
+`pii-redaction` rules before classification and storage. Only an explicit
+`ALLOWED` verdict from the tool-free `hcc-topic-guard` classifier starts an
+answer turn. Rejected questions are not added to the conversation history.
 
 From the repository root, run the offline proxy tests:
 
@@ -20,8 +23,8 @@ For an approved Vertex test, set `VERTEX_PROJECT`, `VERTEX_LOCATION`, and
 `ALLOWED_MODEL` to the test Gemini deployment. Configure Application Default
 Credentials (for example via `GOOGLE_APPLICATION_CREDENTIALS`); do not include
 credentials in requests. `MCP_CONFIG_PATH` optionally selects a rendered stack
-YAML; otherwise the agent reads `customization.system_prompt` from the repository
-template. In separate terminals, on a host with both ports available:
+YAML; otherwise the agent reads the assistant instructions and shields from
+the repository template. In separate terminals, on a host with both ports available:
 
 ```sh
 mkdir -p -m 700 "$HOME/.local/share/hcc-agent-test"
