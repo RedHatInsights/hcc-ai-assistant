@@ -1,0 +1,11 @@
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58
+
+WORKDIR /app/agent-service
+COPY agent-service/pyproject.toml agent-service/uv.lock ./
+RUN uv sync --locked --no-dev --no-install-project --no-cache --no-python-downloads
+ENV PATH="/app/agent-service/.venv/bin:$PATH" PYTHONDONTWRITEBYTECODE=1
+COPY agent-service/turn.py agent-service/conversations.py agent-service/discovered_tools.py ./
+WORKDIR /app
+COPY proxy.py lightspeed-stack.yaml ./
+USER 1001
+CMD ["uvicorn", "turn:create_app", "--factory", "--app-dir", "/app/agent-service", "--host", "127.0.0.1", "--port", "8080", "--no-access-log"]

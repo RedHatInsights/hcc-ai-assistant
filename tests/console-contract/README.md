@@ -43,6 +43,46 @@ Confirm the deployed frontend revision, MIME type, tool-related records, complet
 safe failure before and during a stream. Do not infer these from other assistants or the
 SDK's list of possible event types.
 
+## Isolated build checks (2026-11-20)
+
+The public frontend at `b26b0484` built with `npm ci --no-audit --no-fund` and
+`npm run build` in a fresh UBI 10 Node 24 container (no host mounts or published
+ports). Webpack emitted `fed-mods.json` and the `virtualAssistant` remote. This
+is a **federated module**, not a bootstrapped browser session. The HCC manager
+needs the `platform.chatbot.hcc-ai-assistant.enabled` flag and Chrome's
+`auth.getToken()` for same-origin requests. The pinned dev config enables verbose
+proxying and only adds local overrides for Rasa and MAS. Do not launch that
+proxy against shared services for capture. Supply an isolated console host,
+synthetic gateway identity mapping, and read-only downstream before replay.
+
+The cached application image above and the cached `0.6-latest` base carry the
+same revision label. The other local `lightspeed-ogx:local` image is labeled
+`f6d6eb6f`; neither label identifies a build of `cfccd97`, whose Dockerfile
+requires `lightspeed-stack-rhel9:0.7.3`. Pin the prior application image by digest
+with source/build provenance before baseline or rollback testing.
+
+### Replacement agent/proxy smoke only
+
+From the repository root, with local Docker Desktop/Engine and Buildx:
+
+```sh
+bash tests/console-contract/smoke-candidate.sh
+```
+
+This builds the opt-in `agent-service/Dockerfile.candidate` from an allowlist,
+using the agent lockfile and a digest-pinned Python/uv base, not lcore. The
+build needs public dependency downloads. The run has only loopback, no host
+mounts or published ports, a read-only image and temporary SQLite storage. It
+starts the real agent factory on 8080 and existing proxy on 8000, checks ready
+and live, verifies a missing-identity **query** returns JSON 401 with string
+`detail`, then checks ready=503 and live=200 after the smoke agent exits. This
+is not replay of the baseline **conversations** GET. It prints the local image
+ID and leaves the stopped smoke container; it does not prune Docker resources.
+
+No model call, identity, embedding/discovery process, or deployed console is
+involved. This is not the full deployment image, a Vertex smoke, a four-service
+startup check, or a rollback demonstration. The default build is unchanged.
+
 ## Collect the missing console evidence
 
 1. Use the actual console client pointed at an identified lcore build. Record client revision and backend image ID. Use a disposable sandbox with synthetic resources and enforce read-only access at downstream systems. Do not rely on the prompt to prevent writes.
