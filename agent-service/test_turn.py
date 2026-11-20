@@ -1,7 +1,9 @@
+import asyncio
 import base64
 import json
 import os
 import shutil
+import socket
 import sqlite3
 import subprocess
 import tempfile
@@ -14,6 +16,7 @@ from uuid import UUID, uuid4
 import httpx
 import psycopg2
 import pytest
+import uvicorn
 import yaml
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
@@ -48,8 +51,15 @@ def start_backend(monkeypatch, calls, tmp_path, verdict):
         return ModelResponse(parts=[TextPart("Synthetic console answer")])
 
     @asynccontextmanager
-    async def start(model_response=respond):
-        backend = create_app(model=FunctionModel(model_response))
+    async def start(model_response=respond, stream_function=None, network=False):
+        backend = create_app(model=FunctionModel(model_response, stream_function=stream_function))
+        if network:
+            async with loopback_server(backend) as upstream_url:
+                monkeypatch.setattr(proxy, "BACKEND_URL", upstream_url)
+                async with loopback_server(proxy.app) as proxy_url, httpx.AsyncClient(base_url=proxy_url,
+                                                                                      trust_env=False) as client:
+                    yield client
+            return
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=backend)) as upstream:
             monkeypatch.setattr(proxy.app, "state",
                                 SimpleNamespace(client=upstream))
@@ -81,6 +91,66 @@ def encoded(data):
 def caller_headers(tenant="org-a", user_id="test-id", username="synthetic-user"):
     return {"x-rh-identity": encoded({"identity": {"type": "User", "org_id": tenant,
                                                    "user": {"user_id": user_id, "username": username}}})}
+
+
+@asynccontextmanager
+async def loopback_server(app):
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False))
+        task = asyncio.create_task(server.serve(sockets=[listener]))
+        try:
+            async with asyncio.timeout(5):
+                while not server.started:
+                    if task.done():
+                        await task
+                        pytest.fail("Loopback server exited before startup")
+                    await asyncio.sleep(0.01)
+            yield f"http://127.0.0.1:{listener.getsockname()[1]}"
+        finally:
+            server.should_exit = True
+            await task
+
+
+async def test_welcome_prompt_stream_through_proxy(start_backend):
+    release_answer = asyncio.Event()
+
+    async def stream_answer(messages, info):
+        yield "Synthetic "
+        await asyncio.wait_for(release_answer.wait(), timeout=5)
+        yield "console answer"
+
+    request = {"query": "What can you help me with?", "media_type": "application/json",
+               "model": "publishers/google/models/gemini-2.5-flash", "provider": "google-vertex",
+               "generate_topic_summary": False}
+    async with start_backend(stream_function=stream_answer, network=True) as client:
+        path = "/api/ai-assistant/v1/streaming_query"
+        assert (await client.post(path, json=request)).status_code == 401
+        events = []
+        async with client.stream("POST", path, headers=caller_headers(), json=request) as response:
+            assert response.status_code == 200
+            assert response.headers["content-type"].split(";")[0] == "application/json"
+            lines = response.aiter_lines()
+            async for line in lines:
+                assert line.startswith("data: ")
+                assert await anext(lines) == ""
+                item = json.loads(line[6:])
+                events.append(item)
+                if item["event"] == "token":
+                    release_answer.set()
+        assert [item["event"] for item in events] == ["start", "token", "token", "end"]
+        conversation_id = events[0]["data"]["conversation_id"]
+        assert UUID(conversation_id).version == 4
+        assert [item["data"] for item in events[1:-1]] == [
+            {"id": 0, "token": "Synthetic "}, {"id": 1, "token": "console answer"}]
+        assert events[-1]["data"]["truncated"] is False
+        assert events[-1]["data"]["referenced_documents"] == []
+        assert isinstance(events[-1]["data"]["input_tokens"], int)
+        assert isinstance(events[-1]["data"]["output_tokens"], int)
+        assert events[-1]["available_quotas"] == {}
+        followup = await client.post("/api/ai-assistant/v1/query", headers=caller_headers(),
+                                     json=request | {"query": "And what else?", "conversation_id": conversation_id})
+        assert followup.json()["response"] == "I remember the synthetic answer"
 
 
 @pytest.fixture

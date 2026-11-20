@@ -3,8 +3,8 @@
 The default deployment still runs lcore. This service is for a trusted, isolated
 test deployment only. It trusts a gateway-supplied `x-rh-identity`; base64 is not
 authentication. Do not expose it to untrusted callers or use real account data.
-Only synthetic console User identities and synchronous turns are in scope.
-Streaming is not supported. The agent applies the configured
+Use only synthetic console User identities. Both typed queries and the HCC
+welcome-button JSON stream are supported in this test backend. The agent applies the configured
 `pii-redaction` rules before classification and storage. Only an explicit
 `ALLOWED` verdict from the tool-free `hcc-topic-guard` classifier starts an
 answer turn. Rejected questions are not added to the conversation history.
@@ -67,7 +67,11 @@ ServiceAccount identities are not enabled for this console-only test service.
 
 The [baseline notes](../tests/console-contract/README.md) record a 401 with a
 string `detail` on a direct conversations probe, not an authenticated console
-query. No authenticated capture establishes list, read, update, delete, or
-streaming behavior; none of those routes has been added. Neither this schema
+query. For welcome buttons the opt-in backend serves `POST /v1/streaming_query`
+with the success records verified against frontend source and its SDK fixture:
+`start`, incremental `token`, then `end` after persistence. A real loopback proxy
+test checks delivery before model completion and a typed follow-up. Tool-event
+reporting, error framing and deployed MIME/sequence parity remain unverified.
+List, read, update and delete routes have not been added. Neither this schema
 nor an offline model reply proves console parity.
 Ticket 01 and a live synthetic Vertex smoke test remain cutover prerequisites.

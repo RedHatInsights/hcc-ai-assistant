@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 
 import yaml
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from pydantic_ai import Agent, ModelMessagesTypeAdapter, UnexpectedModelBehavior
 from pydantic_ai.messages import TextPart, UserPromptPart
@@ -29,6 +30,8 @@ class Turn(BaseModel):
     provider: Literal["google-vertex"] | None = None
     model: str | None = None
     conversation_id: UUID | None = None
+    media_type: Literal["application/json"] = "application/json"
+    generate_topic_summary: Literal[False] = False
 
 
 def valid_claim(value: object) -> bool:
@@ -106,6 +109,13 @@ def create_app(model: Model | None = None) -> FastAPI:
 
     @app.post("/v1/query")
     async def query(turn: Turn, request: Request, owner: str = Depends(require_console_user)):
+        return await answer_turn(turn, request, owner, streaming=False)
+
+    @app.post("/v1/streaming_query")
+    async def streaming_query(turn: Turn, request: Request, owner: str = Depends(require_console_user)):
+        return await answer_turn(turn, request, owner, streaming=True)
+
+    async def answer_turn(turn: Turn, request: Request, owner: str, streaming: bool):
         conversation_id = str(turn.conversation_id or uuid4())
         revision, history = 0, []
         if turn.conversation_id is not None:
@@ -126,6 +136,37 @@ def create_app(model: Model | None = None) -> FastAPI:
             allowed = verdict.output.strip() == "ALLOWED"
         except UnexpectedModelBehavior:
             allowed = False
+
+        async def save(messages):
+            saved = await asyncio.to_thread(conversations.save, owner, conversation_id, revision,
+                                            ModelMessagesTypeAdapter.dump_json(messages).decode())
+            if not saved:
+                raise HTTPException(409, "Conversation changed during turn")
+
+        def frame(event, data, **metadata):
+            return "data: " + json.dumps({"event": event, "data": data, **metadata}) + "\n\n"
+
+        async def events():
+            yield frame("start", {"conversation_id": conversation_id})
+            messages = history
+            if allowed:
+                async with agent.run_stream(question, message_history=history, usage=usage,
+                                            toolsets=[turn_tools(servers, request.headers)]) as result:
+                    length = index = 0
+                    async for text in result.stream_text(debounce_by=None):
+                        if len(text) > length:
+                            yield frame("token", {"id": index, "token": text[length:]})
+                            length = len(text)
+                            index += 1
+                    messages = result.all_messages()
+            else:
+                yield frame("token", {"id": 0, "token": refusal})
+            await save(messages)
+            yield frame("end", {"referenced_documents": [], "truncated": False, "input_tokens": usage.input_tokens,
+                                "output_tokens": usage.output_tokens}, available_quotas={})
+
+        if streaming:
+            return StreamingResponse(events(), media_type="application/json; charset=utf-8")
         if allowed:
             result = await agent.run(question, message_history=history, usage=usage,
                                      toolsets=[turn_tools(servers, request.headers)])
@@ -133,10 +174,7 @@ def create_app(model: Model | None = None) -> FastAPI:
             history = result.all_messages()
         else:
             answer = refusal
-        saved = await asyncio.to_thread(conversations.save, owner, conversation_id, revision,
-                                        ModelMessagesTypeAdapter.dump_json(history).decode())
-        if not saved:
-            raise HTTPException(409, "Conversation changed during turn")
+        await save(history)
         return {
             "conversation_id": conversation_id,
             "response": answer,

@@ -20,6 +20,29 @@ bash tests/console-contract/check-missing-identity.sh
 
 Requires Bash, curl and jq. Exit zero means status, exact content type and scalar JSON field paths/types matched the fixture. The check sends only the fixed local GET, ignores curl startup configuration and proxies, follows no redirects and does not print or save the response. It does not test successful authentication or error wording.
 
+## HCC client source evidence (not a browser capture)
+
+The [HCC manager](https://github.com/RedHatInsights/astro-virtual-assistant-frontend/blob/b26b0484a75490f6982a7a286e626bc7bb57a9f5/src/aiClients/useHccAiManager.ts)
+selects `/api/ai-assistant`, sets `streamMessages: false`, and supplies welcome buttons.
+The [footer](https://github.com/RedHatInsights/astro-virtual-assistant-frontend/blob/b26b0484a75490f6982a7a286e626bc7bb57a9f5/src/Components/UniversalChatbot/UniversalFooter.tsx)
+honors the manager flag for typed questions. The [welcome button handler](https://github.com/RedHatInsights/astro-virtual-assistant-frontend/blob/b26b0484a75490f6982a7a286e626bc7bb57a9f5/src/Components/UniversalChatbot/UniversalMessages.tsx)
+explicitly sends `stream: true`. The HCC manager's fetch wrapper recognizes both routes;
+that wrapper alone does not establish which is used.
+
+The frontend lockfile selects `@redhat-cloud-services/ai-client-state` and
+`@redhat-cloud-services/lightspeed-client` 0.15.0. The published state manager passes the
+options through; the client POSTs `/v1/query` or `/v1/streaming_query` respectively,
+with JSON `media_type`. Its JSON stream reader parses newline-terminated `data: ` records,
+gets the conversation ID from `start`, appends `token` text, reads `end` metadata and
+resolves at EOF. The [SDK integration fixture](https://github.com/RedHatInsights/ai-web-clients/blob/91db1c07dae9dc73806ddf6bab6113529237bc2e/apps/client-integration-tests/lightspeed-mock-server.js)
+supplies the provisional success framing, field placement, ordering, and JSON content type
+used in the replacement proxy test. It is not a deployed lcore response.
+
+Exercise **both** welcome-button and typed submissions when collecting the live baseline.
+Confirm the deployed frontend revision, MIME type, tool-related records, completion, and
+safe failure before and during a stream. Do not infer these from other assistants or the
+SDK's list of possible event types.
+
 ## Collect the missing console evidence
 
 1. Use the actual console client pointed at an identified lcore build. Record client revision and backend image ID. Use a disposable sandbox with synthetic resources and enforce read-only access at downstream systems. Do not rely on the prompt to prevent writes.
