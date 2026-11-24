@@ -1,27 +1,25 @@
-FROM registry.redhat.io/lightspeed-core/lightspeed-stack-rhel9:0.7.3
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58
 
 USER root
 
-# Install uv, then torch CPU-only first (avoids pulling ~6GB CUDA libs),
-# then everything else from PyPI. Pin PyArrow because 0.7.3 ships libthrift
-# 0.24 while PyArrow 25.0.1 expects the older ABI.
-RUN pip3.12 install "uv>=0.8.15" && \
-    uv pip install --python /app-root/.venv/bin/python \
+WORKDIR /app/agent-service
+COPY agent-service/pyproject.toml agent-service/uv.lock ./
+RUN uv sync --locked --no-dev --no-install-project --no-cache --no-python-downloads
+COPY agent-service/turn.py agent-service/conversations.py agent-service/discovered_tools.py ./
+
+WORKDIR /app
+RUN uv pip install --system \
         --index-url https://download.pytorch.org/whl/cpu \
         torch && \
-    uv pip install --python /app-root/.venv/bin/python \
+    uv pip install --system \
         --index-url https://pypi.org/simple/ \
-        app-common-python pyyaml \
-        "pyarrow==25.0.0" \
+        app-common-python pyyaml fastapi uvicorn \
         "sentence-transformers>=3.2.0" \
         "numpy>=2.0.0" \
         "psycopg2-binary>=2.9.0" \
         "pgvector>=0.3.0" \
         "mcp[cli]==1.26.0" \
-        "httpx>=0.27.0" \
-        "litellm>=1.88.0" \
-        "aiohttp>=3.13.5" \
-        "cryptography>=46.0.7"
+        "httpx>=0.27.0"
 
 # Pre-download the embedding model into the image (~420MB).
 # HF_HOME must be set before download so the cache lands in a group-writable
@@ -34,13 +32,12 @@ ENV TRANSFORMERS_OFFLINE=1
 
 # OpenShift runs containers with a random UID in group 0 (root).
 # Make /app-root writable by group 0 so the entrypoint can write rendered configs.
-RUN chgrp -R 0 /app-root && chmod -R g=u /app-root
+RUN mkdir -p /app-root/data && chgrp -R 0 /app-root && chmod -R g=u /app-root
 
 USER 1001
 
 # Copy YAML templates, entrypoint, and reverse proxy
-COPY run.yaml lightspeed-stack.yaml /app/
-COPY entrypoint.py proxy.py migrations.py /app/
+COPY lightspeed-stack.yaml entrypoint.py proxy.py /app/
 
 # Copy embedding service and MCP discovery service source files
 COPY embedding-service/main.py /app/embedding-service/main.py

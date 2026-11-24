@@ -1,7 +1,9 @@
-# Opt-in conversation test backend
+# Pydantic AI conversation backend
 
-The default deployment still runs lcore. This service is for a trusted, isolated
-test deployment only. It trusts a gateway-supplied `x-rh-identity`; base64 is not
+The default application starts this agent on port 8080 behind the existing proxy.
+Run `docker compose up -d --build` from the repository root to start the whole stack.
+For isolated tests you can also launch the agent separately as shown below.
+It trusts a gateway-supplied `x-rh-identity`; base64 is not
 authentication. Do not expose it to untrusted callers or use real account data.
 Use only synthetic console User identities. Both typed queries and the HCC
 welcome-button JSON stream are supported in this test backend. The agent applies the configured

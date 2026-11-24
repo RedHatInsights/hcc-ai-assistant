@@ -74,8 +74,6 @@ objects:
               cpu: "1"
               memory: 4Gi
           env:
-          - name: LIGHTSPEED_STACK_CONFIG_PATH
-            value: ${LIGHTSPEED_STACK_CONFIG_PATH}
           - name: VERTEX_PROJECT
             value: ${VERTEX_PROJECT}
           - name: VERTEX_LOCATION
@@ -84,18 +82,8 @@ objects:
             value: ${ALLOWED_MODEL}
           - name: VERTEX_SECRET_PATH
             value: ${VERTEX_SECRET_PATH}
-          - name: STORAGE_DIR
-            value: ${STORAGE_DIR}
-          - name: KV_STORE_PATH
-            value: ${KV_STORE_PATH}
-          - name: SQL_STORE_PATH
-            value: ${SQL_STORE_PATH}
           - name: GOOGLE_APPLICATION_CREDENTIALS
             value: ${VERTEX_SECRET_PATH}
-          # LCORE requires an anonymization secret when OTEL is enabled.
-          # Tracing is not provisioned for this deployment, so disable it explicitly.
-          - name: OTEL_SDK_DISABLED
-            value: "true"
           - name: CLOWDER_ENABLED
             value: ${CLOWDER_ENABLED}
           - name: CLOWDER_MCP_SERVER_CONFIGS
@@ -119,14 +107,6 @@ parameters:
   required: true
 - name: VERTEX_SECRET_PATH
   value: /opt/secrets/service-account-json
-- name: LIGHTSPEED_STACK_CONFIG_PATH
-  value: /app-root/lightspeed-stack.yaml
-- name: STORAGE_DIR
-  value: /tmp/data/storage/files
-- name: KV_STORE_PATH
-  value: /tmp/data/storage/rag/kv_store.db
-- name: SQL_STORE_PATH
-  value: /tmp/data/storage/sql_store.db
 - name: MIN_REPLICAS
   value: '3'
 - description: Image tag
@@ -134,7 +114,7 @@ parameters:
   required: true
 - description: Image name
   name: IMAGE
-  value: quay.io/lightspeed-core/lightspeed-stack
+  required: true
 - description: Determines Clowder deployment
   name: CLOWDER_ENABLED
   value: "true"
