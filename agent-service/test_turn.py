@@ -52,7 +52,8 @@ def start_backend(monkeypatch, calls, tmp_path, verdict):
 
     @asynccontextmanager
     async def start(model_response=respond, stream_function=None, network=False):
-        backend = create_app(model=FunctionModel(model_response, stream_function=stream_function))
+        backend = create_app(model=FunctionModel(
+            model_response, stream_function=stream_function))
         if network:
             async with loopback_server(backend) as upstream_url:
                 monkeypatch.setattr(proxy, "BACKEND_URL", upstream_url)
@@ -97,7 +98,8 @@ def caller_headers(tenant="org-a", user_id="test-id", username="synthetic-user")
 async def loopback_server(app):
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
-        server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False))
+        server = uvicorn.Server(uvicorn.Config(
+            app, log_level="error", access_log=False))
         task = asyncio.create_task(server.serve(sockets=[listener]))
         try:
             async with asyncio.timeout(5):
@@ -129,7 +131,8 @@ async def test_welcome_prompt_stream_through_proxy(start_backend):
         events = []
         async with client.stream("POST", path, headers=caller_headers(), json=request) as response:
             assert response.status_code == 200
-            assert response.headers["content-type"].split(";")[0] == "application/json"
+            assert response.headers["content-type"].split(
+                ";")[0] == "application/json"
             lines = response.aiter_lines()
             async for line in lines:
                 assert line.startswith("data: ")
@@ -138,7 +141,8 @@ async def test_welcome_prompt_stream_through_proxy(start_backend):
                 events.append(item)
                 if item["event"] == "token":
                     release_answer.set()
-        assert [item["event"] for item in events] == ["start", "token", "token", "end"]
+        assert [item["event"] for item in events] == [
+            "start", "token", "token", "end"]
         conversation_id = events[0]["data"]["conversation_id"]
         assert UUID(conversation_id).version == 4
         assert [item["data"] for item in events[1:-1]] == [
@@ -160,30 +164,38 @@ def host_id():
 
 @pytest.fixture
 def tool_servers(tmp_path, monkeypatch, host_id):
-    config = yaml.safe_load((Path(__file__).resolve().parents[1] / "lightspeed-stack.yaml").read_text())
+    config = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "lightspeed-stack.yaml").read_text())
     config["mcp_servers"] = [
-        {"name": "mcp-discovery-server", "url": "http://discovery.test/mcp", "headers": ["X-Trace"]},
-        {"name": "inventory", "url": "http://inventory.test/mcp/", "headers": ["X-Rh-Identity"]},
-        {"name": "advisor", "url": "http://advisor.test/mcp", "headers": ["X-Account"]},
+        {"name": "mcp-discovery-server",
+            "url": "http://discovery.test/mcp", "headers": ["X-Trace"]},
+        {"name": "inventory", "url": "http://inventory.test/mcp/",
+            "headers": ["X-Rh-Identity"]},
+        {"name": "advisor", "url": "http://advisor.test/mcp",
+            "headers": ["X-Account"]},
     ]
     config_path = tmp_path / "servers.yaml"
     config_path.write_text(yaml.safe_dump(config))
     monkeypatch.setenv("MCP_CONFIG_PATH", str(config_path))
     requests = []
-    capability = {"server_name": "inventory", "tool_name": "lookup", "description": "Find hosts", "input_schema": {}}
+    capability = {"server_name": "inventory", "tool_name": "lookup",
+                  "description": "Find hosts", "input_schema": {}}
 
     async def dispatch(self, request):
         body = json.loads(await request.aread())
         method = body["method"]
-        requests.append((request.url.host, method, dict(request.headers), body.get("params", {})))
+        requests.append((request.url.host, method, dict(
+            request.headers), body.get("params", {})))
         if method == "initialize":
             result = {"protocolVersion": body["params"]["protocolVersion"], "capabilities": {"tools": {}},
                       "serverInfo": {"name": "fixture", "version": "1"}}
         elif method == "notifications/initialized":
             return httpx.Response(202)
         elif method == "tools/list":
-            name = {"inventory.test": "lookup", "advisor.test": "risk", "discovery.test": "recommend_tools"}[request.url.host]
-            result = {"tools": [{"name": name, "inputSchema": {"type": "object"}}]}
+            name = {"inventory.test": "lookup", "advisor.test": "risk",
+                    "discovery.test": "recommend_tools"}[request.url.host]
+            result = {
+                "tools": [{"name": name, "inputSchema": {"type": "object"}}]}
         elif method == "tools/call":
             if request.url.host == "discovery.test":
                 task = body["params"]["arguments"]["task"]
@@ -191,7 +203,8 @@ def tool_servers(tmp_path, monkeypatch, host_id):
                 if task == "host risk":
                     choices.append({"server_name": "advisor", "tool_name": "risk", "description": "Get host risk",
                                     "input_schema": {}})
-                text = f"Recommended {len(choices)} tools for task '{task}' (via vector):\n\n" + json.dumps(choices)
+                text = f"Recommended {len(choices)} tools for task '{task}' (via vector):\n\n" + \
+                    json.dumps(choices)
             elif request.url.host == "advisor.test":
                 assert body["params"]["arguments"] == {"host_id": host_id}
                 text = "elevated"
@@ -204,7 +217,8 @@ def tool_servers(tmp_path, monkeypatch, host_id):
             pytest.fail(f"Unexpected MCP request: {body}")
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": result})
 
-    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", dispatch)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport,
+                        "handle_async_request", dispatch)
     return requests, capability
 
 
@@ -214,32 +228,36 @@ async def test_discovered_tool_answer_uses_current_caller(start_backend, tool_se
     def respond(messages, info):
         model_input = repr((messages, info.instructions, info.model_settings))
         for value in ("synthetic-auth-only", "trace-first", "trace-second",
-                  caller_headers(user_id="first")["x-rh-identity"], caller_headers(user_id="second")["x-rh-identity"]):
+                      caller_headers(user_id="first")["x-rh-identity"], caller_headers(user_id="second")["x-rh-identity"]):
             assert value not in model_input
         part = messages[-1].parts[-1]
         if not info.function_tools and "Determine whether" in str(part.content):
             return ModelResponse(parts=[TextPart("ALLOWED")])
         if isinstance(part, UserPromptPart):
-            assert "recommend_tools" in [tool.name for tool in info.function_tools]
+            assert "recommend_tools" in [
+                tool.name for tool in info.function_tools]
             return ModelResponse(parts=[ToolCallPart("recommend_tools", {"task": "hosts"})])
         assert isinstance(part, ToolReturnPart)
         if part.tool_name == "recommend_tools":
             assert "lookup" in str(part.content)
             return ModelResponse(parts=[ToolCallPart("execute_tool", {"server_name": "inventory", "tool_name": "lookup",
-                                                                     "arguments": {"region": "west"}})])
+                                                                      "arguments": {"region": "west"}})])
         return ModelResponse(parts=[TextPart(str(part.content))])
 
     async with start_backend(respond) as client:
         for caller in ("first", "second"):
             requests.clear()
-            headers = caller_headers(user_id=caller) | {"x-trace": f"trace-{caller}", "authorization": "synthetic-auth-only"}
+            headers = caller_headers(user_id=caller) | {
+                "x-trace": f"trace-{caller}", "authorization": "synthetic-auth-only"}
             response = await client.post("/api/ai-assistant/v1/query", headers=headers, json={"query": "Find my hosts"})
             assert response.json()["response"] == "host-83c19"
             assert [(host, params["name"]) for host, method, _, params in requests if method == "tools/call"] == [
                 ("discovery.test", "recommend_tools"), ("inventory.test", "lookup")]
             for host, _, observed, _ in requests:
-                expected = {"x-trace": f"trace-{caller}"} if host == "discovery.test" else caller_headers(user_id=caller)
-                assert {key: observed[key] for key in headers if key in observed} == expected
+                expected = {
+                    "x-trace": f"trace-{caller}"} if host == "discovery.test" else caller_headers(user_id=caller)
+                assert {key: observed[key]
+                        for key in headers if key in observed} == expected
 
 
 @pytest.mark.parametrize("host_id", ["host-42a7", "host-6b90"])
@@ -257,19 +275,20 @@ async def test_dependent_tool_answer_in_one_turn(start_backend, tool_servers, ho
             assert {(item["server_name"], item["tool_name"]) for item in part.content} == {
                 ("inventory", "lookup"), ("advisor", "risk")}
             return ModelResponse(parts=[ToolCallPart("execute_tool", {"server_name": "inventory", "tool_name": "lookup",
-                                                                     "arguments": {"region": "west"}})])
+                                                                      "arguments": {"region": "west"}})])
         results = [item.content for message in messages for item in message.parts
                    if isinstance(item, ToolReturnPart) and item.tool_name == "execute_tool"]
         if len(results) == 1:
             return ModelResponse(parts=[ToolCallPart("execute_tool", {"server_name": "advisor", "tool_name": "risk",
-                                                                     "arguments": {"host_id": results[0]}})])
+                                                                      "arguments": {"host_id": results[0]}})])
         resource, risk = results
         return ModelResponse(parts=[TextPart(f"{resource} has {risk} risk")])
 
     identity = caller_headers()
     policies = {"inventory.test": identity, "advisor.test": {"x-account": "test-account"},
                 "discovery.test": {"x-trace": "test-trace"}}
-    headers = identity | policies["advisor.test"] | policies["discovery.test"] | {"authorization": "not-forwarded"}
+    headers = identity | policies["advisor.test"] | policies["discovery.test"] | {
+        "authorization": "not-forwarded"}
     async with start_backend(respond) as client:
         response = await client.post("/api/ai-assistant/v1/query", headers=headers,
                                      json={"query": "What is the risk for my western host?"})
@@ -278,7 +297,8 @@ async def test_dependent_tool_answer_in_one_turn(start_backend, tool_servers, ho
     assert [(host, params["name"]) for host, method, _, params in requests if method == "tools/call"] == [
         ("discovery.test", "recommend_tools"), ("inventory.test", "lookup"), ("advisor.test", "risk")]
     for host, _, observed, _ in requests:
-        assert {key: observed[key] for key in headers if key in observed} == policies[host]
+        assert {key: observed[key]
+                for key in headers if key in observed} == policies[host]
 
 
 @pytest.mark.parametrize(("recommended_server", "recommended_tool", "target", "tool"), [
@@ -288,9 +308,10 @@ async def test_dependent_tool_answer_in_one_turn(start_backend, tool_servers, ho
     ("inventory", "lookup", "http://inventory.test/mcp/", "lookup"),
 ])
 async def test_only_exact_available_recommendation_can_execute(start_backend, tool_servers, recommended_server,
-                                                              recommended_tool, target, tool):
+                                                               recommended_tool, target, tool):
     requests, capability = tool_servers
-    capability.update(server_name=recommended_server, tool_name=recommended_tool)
+    capability.update(server_name=recommended_server,
+                      tool_name=recommended_tool)
 
     def respond(messages, info):
         part = messages[-1].parts[-1]
@@ -299,7 +320,8 @@ async def test_only_exact_available_recommendation_can_execute(start_backend, to
         if isinstance(part, UserPromptPart):
             return ModelResponse(parts=[ToolCallPart("recommend_tools", {"task": "hosts"})])
         if isinstance(part, ToolReturnPart) and part.tool_name == "recommend_tools":
-            selection = {"server_name": target, "tool_name": tool, "arguments": {}}
+            selection = {"server_name": target,
+                         "tool_name": tool, "arguments": {}}
             return ModelResponse(parts=[ToolCallPart("execute_tool", selection)])
         return ModelResponse(parts=[TextPart("No available tool")])
 
@@ -322,7 +344,8 @@ async def test_sensitive_console_turn(client, calls, tmp_path):
     assert expected in calls[0][0][-1].parts[-1].content
     assert calls[-1][0][-1].parts[-1].content == expected
     with closing(sqlite3.connect(tmp_path / "chat.sqlite")) as conn:
-        history, = conn.execute("SELECT history FROM agent_conversations_v1").fetchone()
+        history, = conn.execute(
+            "SELECT history FROM agent_conversations_v1").fetchone()
     assert expected in history
     for value in ("example@example.test", "123-45-6789", "mock-pass", "synthetic_token_1234", "AAAAtest"):
         assert value not in repr(calls) and value not in history
@@ -339,7 +362,7 @@ async def test_followup_requires_new_recommendation(start_backend, tool_servers)
             if part.content == "Find tools":
                 return ModelResponse(parts=[ToolCallPart("recommend_tools", {"task": "hosts"})])
             return ModelResponse(parts=[ToolCallPart("execute_tool", {"server_name": "inventory", "tool_name": "lookup",
-                                                                     "arguments": {"region": "west"}})])
+                                                                      "arguments": {"region": "west"}})])
         return ModelResponse(parts=[TextPart(str(part.content))])
 
     path = "/api/ai-assistant/v1/query"
@@ -348,7 +371,7 @@ async def test_followup_requires_new_recommendation(start_backend, tool_servers)
         assert "lookup" in first.json()["response"]
         requests.clear()
         followup = await client.post(path, headers=caller_headers(), json={"query": "Use the same tool",
-                                                                          "conversation_id": first.json()["conversation_id"]})
+                                                                           "conversation_id": first.json()["conversation_id"]})
         assert followup.status_code == 200
         assert requests == []
 
@@ -359,8 +382,10 @@ async def test_topic_refusal(tool_servers, client, calls, verdict):
                                  json={"query": "Write a cake recipe for example@example.test"})
     assert response.status_code == 200
     body = response.json()
-    config = yaml.safe_load((Path(__file__).resolve().parents[1] / "lightspeed-stack.yaml").read_text())
-    guard = next(shield["config"] for shield in config["shields"] if shield["name"] == "hcc-topic-guard")
+    config = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "lightspeed-stack.yaml").read_text())
+    guard = next(shield["config"] for shield in config["shields"]
+                 if shield["name"] == "hcc-topic-guard")
     assert body["response"] == guard["invalid_question_response"]
     assert body["tool_calls"] == body["tool_results"] == []
     assert UUID(body["conversation_id"]).version == 4
@@ -376,29 +401,35 @@ async def test_restart_applies_current_rules_to_prior_history(start_backend, cal
     async with start_backend() as client:
         first = await client.post(path, headers=caller_headers(), json={"query": "Explain HCC for private-team"})
         conversation_id = first.json()["conversation_id"]
-    config = yaml.safe_load((Path(__file__).resolve().parents[1] / "lightspeed-stack.yaml").read_text())
-    rules = next(shield["config"]["rules"] for shield in config["shields"] if shield["name"] == "pii-redaction")
-    rules.append({"pattern": "private-team|Synthetic console answer", "replacement": "[PRIVATE]"})
+    config = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "lightspeed-stack.yaml").read_text())
+    rules = next(shield["config"]["rules"]
+                 for shield in config["shields"] if shield["name"] == "pii-redaction")
+    rules.append(
+        {"pattern": "private-team|Synthetic console answer", "replacement": "[PRIVATE]"})
     config_path = tmp_path / "policy.yaml"
     config_path.write_text(yaml.safe_dump(config))
     monkeypatch.setenv("MCP_CONFIG_PATH", str(config_path))
     calls.clear()
     async with start_backend() as restarted:
         response = await restarted.post(path, headers=caller_headers(), json={"query": "And RHEL?",
-                                                                             "conversation_id": conversation_id})
+                                                                              "conversation_id": conversation_id})
     assert response.status_code == 200
     assert "Explain HCC for [PRIVATE]" in repr(calls)
     for messages, _ in calls:
-        assert "private-team" not in repr(messages) and "Synthetic console answer" not in repr(messages)
+        assert "private-team" not in repr(
+            messages) and "Synthetic console answer" not in repr(messages)
     with closing(sqlite3.connect(tmp_path / "chat.sqlite")) as conn:
-        history, = conn.execute("SELECT history FROM agent_conversations_v1").fetchone()
+        history, = conn.execute(
+            "SELECT history FROM agent_conversations_v1").fetchone()
     assert "private-team" not in history
 
 
 @pytest.fixture
 def isolated_postgres(monkeypatch, tmp_path):
     if not all(shutil.which(tool) for tool in ("initdb", "pg_ctl")):
-        pytest.skip("add PostgreSQL server binaries to PATH to run the disposable cluster check")
+        pytest.skip(
+            "add PostgreSQL server binaries to PATH to run the disposable cluster check")
     for name in list(os.environ):
         if name.startswith("PG"):
             monkeypatch.delenv(name)
@@ -414,21 +445,25 @@ def isolated_postgres(monkeypatch, tmp_path):
         try:
             yield
         finally:
-            subprocess.run(["pg_ctl", "-D", data, "-m", "fast", "-w", "stop"], check=True)
+            subprocess.run(["pg_ctl", "-D", data, "-m",
+                           "fast", "-w", "stop"], check=True)
 
 
 @pytest.mark.asyncio
 async def test_postgres_owned_restart_preserves_existing_data(start_backend, isolated_postgres, calls):
     with closing(psycopg2.connect()) as conn, conn, conn.cursor() as cursor:
-        cursor.execute("CREATE TABLE conversations AS SELECT 'legacy chat' AS value")
-        cursor.execute("CREATE TABLE embeddings AS SELECT 'legacy embedding' AS value")
+        cursor.execute(
+            "CREATE TABLE conversations AS SELECT 'legacy chat' AS value")
+        cursor.execute(
+            "CREATE TABLE embeddings AS SELECT 'legacy embedding' AS value")
     path = "/api/ai-assistant/v1/query"
     async with start_backend() as client:
         first = await client.post(path, headers=caller_headers(), json={"query": "What is HCC?"})
         assert first.status_code == 200
         conversation_id = first.json()["conversation_id"]
     async with start_backend() as restarted:
-        body = {"query": "What did you say?", "conversation_id": conversation_id}
+        body = {"query": "What did you say?",
+                "conversation_id": conversation_id}
         denied = await restarted.post(path, headers=caller_headers(tenant="org-b"), json=body)
         assert denied.status_code == 404
         assert len(calls) == 2
@@ -437,10 +472,11 @@ async def test_postgres_owned_restart_preserves_existing_data(start_backend, iso
         assert resumed.json()["conversation_id"] == conversation_id
         assert resumed.json()["response"] == "I remember the synthetic answer"
     with closing(psycopg2.connect()) as conn, conn, conn.cursor() as cursor:
-        cursor.execute("SELECT conversations.value, embeddings.value FROM conversations CROSS JOIN embeddings")
+        cursor.execute(
+            "SELECT conversations.value, embeddings.value FROM conversations CROSS JOIN embeddings")
         assert cursor.fetchall() == [("legacy chat", "legacy embedding")]
         cursor.execute("SELECT owner_key, history FROM agent_conversations_v1 WHERE conversation_id = %s",
-                   (conversation_id,))
+                       (conversation_id,))
         owner, history = cursor.fetchone()
         for claim in ("org-a", "test-id", "synthetic-user", caller_headers()["x-rh-identity"]):
             assert claim not in owner and claim not in history

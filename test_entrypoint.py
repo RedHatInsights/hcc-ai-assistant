@@ -1,3 +1,13 @@
+from entrypoint import (
+    load_mcp_server_configs,
+    merge_mcp_servers,
+)
+import yaml
+import pytest
+import os
+import json
+
+
 def test_default_process_flow(monkeypatch):
     from unittest.mock import Mock
 
@@ -16,7 +26,8 @@ def test_default_process_flow(monkeypatch):
 
     entrypoint.main()
 
-    embedding, discovery, agent = [call.args[0] for call in processes.call_args_list]
+    embedding, discovery, agent = [call.args[0]
+                                   for call in processes.call_args_list]
     assert "/app/embedding-service" in embedding
     assert "/app/mcp-discovery-service/main.py" in discovery
     assert "turn:create_app" in agent and "--factory" in agent
@@ -24,20 +35,10 @@ def test_default_process_flow(monkeypatch):
     assert proxy.call_args.args == ("proxy:app",)
 
 
-import json
-import os
-
-import pytest
-import yaml
-
-from entrypoint import (
-    load_mcp_server_configs,
-    merge_mcp_servers,
-)
-
 # ============================================================================
 # FIXTURES
 # ============================================================================
+
 
 @pytest.fixture
 def mcp_configs():
@@ -66,7 +67,8 @@ def base_stack_config():
 class TestLoadMcpServerConfigs:
 
     def test_loads_from_env_var(self, monkeypatch, mcp_configs):
-        monkeypatch.setenv("CLOWDER_MCP_SERVER_CONFIGS", json.dumps(mcp_configs))
+        monkeypatch.setenv("CLOWDER_MCP_SERVER_CONFIGS",
+                           json.dumps(mcp_configs))
         result = load_mcp_server_configs()
         assert result == mcp_configs
 
@@ -92,10 +94,13 @@ class TestLoadMcpServerConfigs:
         assert result == {}
 
     def test_env_var_takes_precedence_over_file(self, monkeypatch, tmp_path):
-        env_config = {"env-server": {"provider_id": "env", "url": "http://env/mcp/"}}
-        file_config = {"file-server": {"provider_id": "file", "url": "http://file/mcp/"}}
+        env_config = {
+            "env-server": {"provider_id": "env", "url": "http://env/mcp/"}}
+        file_config = {
+            "file-server": {"provider_id": "file", "url": "http://file/mcp/"}}
 
-        monkeypatch.setenv("CLOWDER_MCP_SERVER_CONFIGS", json.dumps(env_config))
+        monkeypatch.setenv("CLOWDER_MCP_SERVER_CONFIGS",
+                           json.dumps(env_config))
         config_file = tmp_path / "local_mcp_server_configs.json"
         config_file.write_text(json.dumps(file_config))
         monkeypatch.setattr("entrypoint.TEMPLATE_DIR", str(tmp_path))
@@ -112,7 +117,8 @@ class TestLoadMcpServerConfigs:
 class TestMergeMcpServers:
 
     def test_merges_into_empty_configs(self, monkeypatch, mcp_configs, base_stack_config):
-        monkeypatch.setenv("CLOWDER_MCP_SERVER_CONFIGS", json.dumps(mcp_configs))
+        monkeypatch.setenv("CLOWDER_MCP_SERVER_CONFIGS",
+                           json.dumps(mcp_configs))
 
         merge_mcp_servers(base_stack_config, clowder=None)
 
@@ -126,19 +132,23 @@ class TestMergeMcpServers:
         }
 
     def test_preserves_headers(self, monkeypatch, mcp_configs, base_stack_config):
-        monkeypatch.setenv("CLOWDER_MCP_SERVER_CONFIGS", json.dumps(mcp_configs))
+        monkeypatch.setenv("CLOWDER_MCP_SERVER_CONFIGS",
+                           json.dumps(mcp_configs))
 
         merge_mcp_servers(base_stack_config, clowder=None)
 
-        rbac = next(s for s in base_stack_config["mcp_servers"] if s["name"] == "rbac-mcp-server")
+        rbac = next(
+            s for s in base_stack_config["mcp_servers"] if s["name"] == "rbac-mcp-server")
         assert rbac["headers"] == ["x-rh-identity"]
 
-        notif = next(s for s in base_stack_config["mcp_servers"] if s["name"] == "notifications-mcp-server")
+        notif = next(
+            s for s in base_stack_config["mcp_servers"] if s["name"] == "notifications-mcp-server")
         assert "headers" not in notif
 
     def test_deduplicates_by_name(self, monkeypatch, base_stack_config):
         base_stack_config["mcp_servers"] = [
-            {"name": "existing-server", "provider_id": "old-provider", "url": "http://old/mcp/"}
+            {"name": "existing-server", "provider_id": "old-provider",
+                "url": "http://old/mcp/"}
         ]
 
         new_configs = {
@@ -147,7 +157,8 @@ class TestMergeMcpServers:
                 "url": "http://new/mcp/",
             }
         }
-        monkeypatch.setenv("CLOWDER_MCP_SERVER_CONFIGS", json.dumps(new_configs))
+        monkeypatch.setenv("CLOWDER_MCP_SERVER_CONFIGS",
+                           json.dumps(new_configs))
 
         merge_mcp_servers(base_stack_config, clowder=None)
 
@@ -165,7 +176,8 @@ class TestMergeMcpServers:
         assert json.dumps(base_stack_config) == original_stack
 
     def test_creates_missing_keys(self, monkeypatch, mcp_configs):
-        monkeypatch.setenv("CLOWDER_MCP_SERVER_CONFIGS", json.dumps(mcp_configs))
+        monkeypatch.setenv("CLOWDER_MCP_SERVER_CONFIGS",
+                           json.dumps(mcp_configs))
         stack_config = {}
 
         merge_mcp_servers(stack_config, clowder=None)
@@ -314,7 +326,8 @@ _DANGEROUS_ACTIONS = {
 
 def _load_stack_yaml_access_rules():
     """Load access_rules from the lightspeed-stack.yaml template."""
-    yaml_path = os.path.join(os.path.dirname(__file__), "lightspeed-stack.yaml")
+    yaml_path = os.path.join(os.path.dirname(
+        __file__), "lightspeed-stack.yaml")
     with open(yaml_path) as f:
         config = yaml.safe_load(f)
     return config["authorization"]["access_rules"]

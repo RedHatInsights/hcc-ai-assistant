@@ -14,7 +14,8 @@ DISCOVERY = "mcp-discovery-server"
 
 @asynccontextmanager
 async def connect(server, caller_headers):
-    headers = {name: caller_headers[name] for name in server.get("headers", []) if name in caller_headers}
+    headers = {name: caller_headers[name] for name in server.get(
+        "headers", []) if name in caller_headers}
     async with httpx.AsyncClient(headers=headers, follow_redirects=False, trust_env=False) as client:
         async with streamable_http_client(server["url"], http_client=client) as (reader, writer, _):
             async with ClientSession(reader, writer) as session:

@@ -77,12 +77,14 @@ def create_app(model: Model | None = None) -> FastAPI:
     config_path = Path(os.getenv("MCP_CONFIG_PATH", Path(
         __file__).resolve().parents[1] / "lightspeed-stack.yaml"))
     config = yaml.safe_load(config_path.read_text())
-    servers = {server["name"]: server for server in config.get("mcp_servers") or []}
+    servers = {server["name"]               : server for server in config.get("mcp_servers") or []}
     instructions = config["customization"]["system_prompt"]
-    shields = {shield["name"]: shield["config"] for shield in config["shields"]}
+    shields = {shield["name"]: shield["config"]
+               for shield in config["shields"]}
     redaction = shields["pii-redaction"]
     flags = 0 if redaction["case_sensitive"] else re.IGNORECASE
-    rules = [(re.compile(rule["pattern"], flags), rule["replacement"]) for rule in redaction["rules"]]
+    rules = [(re.compile(rule["pattern"], flags), rule["replacement"])
+             for rule in redaction["rules"]]
 
     def redact(text: str) -> str:
         for pattern, replacement in rules:

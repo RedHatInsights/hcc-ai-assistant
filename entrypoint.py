@@ -41,7 +41,8 @@ def load_mcp_server_configs():
     """
     raw = os.environ.get("CLOWDER_MCP_SERVER_CONFIGS")
     if not raw:
-        config_path = os.path.join(TEMPLATE_DIR, "local_mcp_server_configs.json")
+        config_path = os.path.join(
+            TEMPLATE_DIR, "local_mcp_server_configs.json")
         try:
             with open(config_path) as f:
                 raw = f.read()
@@ -75,7 +76,8 @@ def merge_mcp_servers(stack_config, clowder):
         url = cfg.get("url", "")
 
         if not url and not cfg.get("clowder_app"):
-            print(f"[entrypoint] ERROR: MCP server {name} has no 'url' and no 'clowder_app' — skipping")
+            print(
+                f"[entrypoint] ERROR: MCP server {name} has no 'url' and no 'clowder_app' — skipping")
             continue
 
         server_entry = {"name": name, "provider_id": provider_id, "url": url}
@@ -111,7 +113,8 @@ def merge_mcp_servers(stack_config, clowder):
                 break
 
         if not endpoint:
-            print(f"[entrypoint] No Clowder endpoint for {name} (app={clowder_app}), keeping URL")
+            print(
+                f"[entrypoint] No Clowder endpoint for {name} (app={clowder_app}), keeping URL")
             continue
 
         resolved_url = f"http://{endpoint.hostname}:{endpoint.port}{mcp_server_path}"
@@ -172,7 +175,8 @@ def set_db_env_vars(clowder):
             cert.write(rds_ca)
         os.environ.setdefault("PGSSLROOTCERT", "/tmp/rds-ca.crt")
 
-    print(f"[entrypoint] Set PG* env vars for embedding service ({db.hostname}:{db.port}/{db.name})")
+    print(
+        f"[entrypoint] Set PG* env vars for embedding service ({db.hostname}:{db.port}/{db.name})")
 
 
 def wait_for_health(url, timeout, name):
@@ -192,7 +196,8 @@ def wait_for_health(url, timeout, name):
             pass
         time.sleep(interval)
 
-    print(f"[entrypoint] WARNING: {name} did not become healthy within {timeout}s, continuing anyway")
+    print(
+        f"[entrypoint] WARNING: {name} did not become healthy within {timeout}s, continuing anyway")
 
 
 def main():
@@ -207,7 +212,8 @@ def main():
 
     # --- Start embedding service ---
     embedding_port = os.environ.get("EMBEDDING_SERVICE_PORT", "8002")
-    print(f"[entrypoint] Starting embedding service on port {embedding_port}...")
+    print(
+        f"[entrypoint] Starting embedding service on port {embedding_port}...")
     embedding_proc = subprocess.Popen([
         "python3.12", "-m", "uvicorn", "main:app",
         "--host", "0.0.0.0",
@@ -215,24 +221,30 @@ def main():
         "--app-dir", "/app/embedding-service",
     ])
     children.append(("embedding-service", embedding_proc))
-    wait_for_health(f"http://localhost:{embedding_port}/health", timeout=120, name="embedding-service")
+    wait_for_health(
+        f"http://localhost:{embedding_port}/health", timeout=120, name="embedding-service")
 
     # --- Start MCP discovery service ---
     mcp_discovery_port = os.environ.get("MCP_DISCOVERY_SERVICE_PORT", "8001")
     # TODO: Move env var plumbing to a config/env helper
     os.environ.setdefault("ENABLE_VECTOR_STORE", "true")
-    os.environ.setdefault("EMBEDDING_SERVICE_URL", f"http://localhost:{embedding_port}")
-    os.environ.setdefault("MCP_CONFIG_PATH", os.path.join(RUNTIME_DIR, STACK_YAML))
-    os.environ.setdefault("CAPABILITIES_CACHE_PATH", os.path.join(RUNTIME_DIR, "data", "mcp-capabilities.json"))
+    os.environ.setdefault("EMBEDDING_SERVICE_URL",
+                          f"http://localhost:{embedding_port}")
+    os.environ.setdefault(
+        "MCP_CONFIG_PATH", os.path.join(RUNTIME_DIR, STACK_YAML))
+    os.environ.setdefault("CAPABILITIES_CACHE_PATH", os.path.join(
+        RUNTIME_DIR, "data", "mcp-capabilities.json"))
     os.environ.setdefault("HOST", "0.0.0.0")
     os.environ.setdefault("PORT", mcp_discovery_port)
 
-    print(f"[entrypoint] Starting MCP discovery service on port {mcp_discovery_port}...")
+    print(
+        f"[entrypoint] Starting MCP discovery service on port {mcp_discovery_port}...")
     mcp_discovery_proc = subprocess.Popen([
         "python3.12", "/app/mcp-discovery-service/main.py",
     ])
     children.append(("mcp-discovery-service", mcp_discovery_proc))
-    wait_for_health(f"http://localhost:{mcp_discovery_port}/health", timeout=60, name="mcp-discovery-service")
+    wait_for_health(
+        f"http://localhost:{mcp_discovery_port}/health", timeout=60, name="mcp-discovery-service")
 
     service_config = stack_config.get("service", {})
     backend_host = "127.0.0.1"
@@ -242,11 +254,14 @@ def main():
     # TODO: Move env var plumbing to a config/env helper
     os.environ.setdefault("PROXY_BACKEND_URL", backend_url)
 
-    os.environ.setdefault("AGENT_SQLITE_PATH", os.path.join(RUNTIME_DIR, "agent.sqlite"))
-    print(f"[entrypoint] Starting Pydantic AI agent on {backend_host}:{backend_port}...")
+    os.environ.setdefault("AGENT_SQLITE_PATH",
+                          os.path.join(RUNTIME_DIR, "agent.sqlite"))
+    print(
+        f"[entrypoint] Starting Pydantic AI agent on {backend_host}:{backend_port}...")
     backend = subprocess.Popen([
         "/app/agent-service/.venv/bin/python", "-m", "uvicorn", "turn:create_app", "--factory",
-        "--app-dir", "/app/agent-service", "--host", backend_host, "--port", str(backend_port),
+        "--app-dir", "/app/agent-service", "--host", backend_host, "--port", str(
+            backend_port),
     ])
     children.append(("agent", backend))
 
@@ -266,12 +281,13 @@ def main():
     proxy_host = os.environ.get("PROXY_HOST", "0.0.0.0")
     proxy_port = int(os.environ.get("PROXY_PORT", "8000"))
     proxy_log_level = os.environ.get("PROXY_LOG_LEVEL", "warning")
-    print(f"[entrypoint] Starting reverse proxy on {proxy_host}:{proxy_port} (log_level={proxy_log_level})...")
+    print(
+        f"[entrypoint] Starting reverse proxy on {proxy_host}:{proxy_port} (log_level={proxy_log_level})...")
     import uvicorn
 
     try:
         uvicorn.run("proxy:app", host=proxy_host, port=proxy_port,
-                     log_level=proxy_log_level, app_dir="/app")
+                    log_level=proxy_log_level, app_dir="/app")
     finally:
         for name, proc in children:
             print(f"[entrypoint] Terminating {name} (pid={proc.pid})...")
