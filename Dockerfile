@@ -1,8 +1,7 @@
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58 AS uv-tool
-
 FROM registry.access.redhat.com/ubi9/python-312@sha256:5a0471c98fc10017d011c16b7615cd1d7f157d796f89eb4900ca0dc6c87384cf AS agent-deps
 USER root
-COPY --from=uv-tool /usr/local/bin/uv /usr/local/bin/uv
+RUN /usr/bin/python3.12 -m pip install --no-cache-dir --no-deps --only-binary=:all: \
+    --index-url https://pypi.org/simple/ uv==0.9.30
 ARG UV_CACHE_DIR=/root/.cache/uv
 
 WORKDIR /app/agent-service
