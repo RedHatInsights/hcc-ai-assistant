@@ -1,5 +1,5 @@
 """Entrypoint script that populates YAML config templates from environment
-variables and Clowder ACG config, then starts lightspeed-stack behind a
+variables and Clowder ACG config, then starts the Pydantic AI agent behind a
 reverse proxy that strips the /api/ai-assistant path prefix.
 
 Also manages embedding service and MCP discovery service subprocesses."""
@@ -17,7 +17,6 @@ import yaml
 
 TEMPLATE_DIR = "/app"
 RUNTIME_DIR = "/app-root"
-RUN_YAML = "run.yaml"
 STACK_YAML = "lightspeed-stack.yaml"
 
 
@@ -42,7 +41,8 @@ def load_mcp_server_configs():
     """
     raw = os.environ.get("CLOWDER_MCP_SERVER_CONFIGS")
     if not raw:
-        config_path = os.path.join(TEMPLATE_DIR, "local_mcp_server_configs.json")
+        config_path = os.path.join(
+            TEMPLATE_DIR, "local_mcp_server_configs.json")
         try:
             with open(config_path) as f:
                 raw = f.read()
@@ -61,33 +61,23 @@ def load_mcp_server_configs():
     return configs
 
 
-def merge_mcp_servers(run_config, stack_config, clowder):
-    """Merge dynamic MCP servers from env var into configs and resolve Clowder URLs.
-
-    1. Load server definitions from CLOWDER_MCP_SERVER_CONFIGS env var
-    2. Merge into stack_config[mcp_servers] and run_config tool_runtime providers
-       (de-duplicating by server name / provider_id)
-    3. Resolve URLs from Clowder endpoints for servers with clowder_app field
-    """
+def merge_mcp_servers(stack_config, clowder):
+    """Resolve the shared MCP server registrations for discovery and the agent."""
     mcp_configs = load_mcp_server_configs()
     if not mcp_configs:
         return
 
     mcp_servers = stack_config.setdefault("mcp_servers", [])
-    tool_runtime = run_config.setdefault("providers", {}).setdefault("tool_runtime", [])
 
     existing_servers = {s["name"]: i for i, s in enumerate(mcp_servers)}
-    existing_providers = {
-        p["provider_id"]: i for i, p in enumerate(tool_runtime)
-        if p.get("provider_type") == "remote::model-context-protocol"
-    }
 
     for name, cfg in mcp_configs.items():
         provider_id = cfg["provider_id"]
         url = cfg.get("url", "")
 
         if not url and not cfg.get("clowder_app"):
-            print(f"[entrypoint] ERROR: MCP server {name} has no 'url' and no 'clowder_app' — skipping")
+            print(
+                f"[entrypoint] ERROR: MCP server {name} has no 'url' and no 'clowder_app' — skipping")
             continue
 
         server_entry = {"name": name, "provider_id": provider_id, "url": url}
@@ -99,27 +89,12 @@ def merge_mcp_servers(run_config, stack_config, clowder):
         else:
             mcp_servers.append(server_entry)
 
-        provider_entry = {
-            "config": {"url": url},
-            "provider_id": provider_id,
-            "provider_type": "remote::model-context-protocol",
-        }
-
-        if provider_id in existing_providers:
-            tool_runtime[existing_providers[provider_id]] = provider_entry
-        else:
-            tool_runtime.append(provider_entry)
-
         print(f"[entrypoint] Registered MCP server {name} ({url})")
 
     if not clowder or not getattr(clowder, "endpoints", None):
         return
 
     server_by_name = {s["name"]: s for s in mcp_servers}
-    provider_by_id = {
-        p["provider_id"]: p for p in tool_runtime
-        if p.get("provider_type") == "remote::model-context-protocol"
-    }
 
     for name, cfg in mcp_configs.items():
         clowder_app = cfg.get("clowder_app")
@@ -138,7 +113,8 @@ def merge_mcp_servers(run_config, stack_config, clowder):
                 break
 
         if not endpoint:
-            print(f"[entrypoint] No Clowder endpoint for {name} (app={clowder_app}), keeping URL")
+            print(
+                f"[entrypoint] No Clowder endpoint for {name} (app={clowder_app}), keeping URL")
             continue
 
         resolved_url = f"http://{endpoint.hostname}:{endpoint.port}{mcp_server_path}"
@@ -147,76 +123,7 @@ def merge_mcp_servers(run_config, stack_config, clowder):
         if server:
             server["url"] = resolved_url
 
-        provider = provider_by_id.get(cfg["provider_id"])
-        if provider:
-            provider["config"]["url"] = resolved_url
-
         print(f"[entrypoint] Resolved {name} -> {resolved_url}")
-
-
-def apply_clowder_config(run_config, stack_config, clowder):
-    """Apply Clowder ACG config values to the parsed YAML configs."""
-    if clowder is None:
-        return run_config, stack_config
-
-    # Database config - switch from sqlite to postgres if DB is available
-    if clowder.database:
-        db = clowder.database
-        ssl_mode = getattr(db, "sslMode", None) or "prefer"
-
-        print(f"[entrypoint] Using Clowder DB: {db.hostname}:{db.port}/{db.name}")
-
-        pg_config = {
-            "host": db.hostname,
-            "port": db.port,
-            "db": db.name,
-            "user": db.username,
-            "password": db.password,
-            "ssl_mode": ssl_mode,
-        }
-
-        # Write RDS CA cert to file if provided
-        rds_ca = getattr(db, "rdsCa", None)
-        if rds_ca:
-            ca_path = "/tmp/rds-ca.crt"
-            with open(ca_path, "w") as f:
-                f.write(rds_ca)
-            pg_config["ca_cert_path"] = ca_path
-
-        # Update storage backends from sqlite to postgres (llama-stack run.yaml)
-        storage = run_config.get("storage", {})
-        backends = storage.get("backends", {})
-
-        llama_pg_config = {
-            "host": db.hostname,
-            "port": db.port,
-            "db": db.name,
-            "user": db.username,
-            "password": db.password,
-            "ssl_mode": ssl_mode,
-        }
-
-        backends["kv_default"] = {
-            "type": "kv_postgres",
-            **llama_pg_config,
-        }
-        backends["sql_default"] = {
-            "type": "sql_postgres",
-            **llama_pg_config,
-        }
-
-        # Update conversation cache in stack config
-        stack_config["conversation_cache"] = {
-            "type": "postgres",
-            "postgres": pg_config,
-        }
-
-        # Update main database config in stack config
-        stack_config["database"] = {
-            "postgres": pg_config,
-        }
-
-    return run_config, stack_config
 
 
 def render_configs(clowder):
@@ -226,28 +133,18 @@ def render_configs(clowder):
     """
     os.makedirs(RUNTIME_DIR, exist_ok=True)
 
-    run_template = os.path.join(TEMPLATE_DIR, RUN_YAML)
     stack_template = os.path.join(TEMPLATE_DIR, STACK_YAML)
-
-    with open(run_template) as f:
-        run_config = yaml.safe_load(f)
 
     with open(stack_template) as f:
         stack_config = yaml.safe_load(f)
 
-    run_config, stack_config = apply_clowder_config(run_config, stack_config, clowder)
-    merge_mcp_servers(run_config, stack_config, clowder)
+    merge_mcp_servers(stack_config, clowder)
 
-    run_out = os.path.join(RUNTIME_DIR, RUN_YAML)
     stack_out = os.path.join(RUNTIME_DIR, STACK_YAML)
-
-    with open(run_out, "w") as f:
-        yaml.dump(run_config, f, default_flow_style=False, sort_keys=False)
 
     with open(stack_out, "w") as f:
         yaml.dump(stack_config, f, default_flow_style=False, sort_keys=False)
 
-    print(f"[entrypoint] Wrote {run_out}")
     print(f"[entrypoint] Wrote {stack_out}")
 
     return stack_config
@@ -271,13 +168,15 @@ def set_db_env_vars(clowder):
     os.environ.setdefault("PGSSLMODE", ssl_mode)
 
     # The embedding service uses psycopg2 which reads PGSSLROOTCERT for the
-    # CA cert path when sslmode=verify-full. The cert is written to
-    # /tmp/rds-ca.crt by apply_clowder_config().
+    # CA cert path when sslmode=verify-full.
     rds_ca = getattr(db, "rdsCa", None)
     if rds_ca:
+        with open("/tmp/rds-ca.crt", "w") as cert:
+            cert.write(rds_ca)
         os.environ.setdefault("PGSSLROOTCERT", "/tmp/rds-ca.crt")
 
-    print(f"[entrypoint] Set PG* env vars for embedding service ({db.hostname}:{db.port}/{db.name})")
+    print(
+        f"[entrypoint] Set PG* env vars for embedding service ({db.hostname}:{db.port}/{db.name})")
 
 
 def wait_for_health(url, timeout, name):
@@ -297,7 +196,8 @@ def wait_for_health(url, timeout, name):
             pass
         time.sleep(interval)
 
-    print(f"[entrypoint] WARNING: {name} did not become healthy within {timeout}s, continuing anyway")
+    print(
+        f"[entrypoint] WARNING: {name} did not become healthy within {timeout}s, continuing anyway")
 
 
 def main():
@@ -307,17 +207,13 @@ def main():
     # Export DB config as env vars for the embedding service subprocess
     set_db_env_vars(clowder)
 
-    # Run database migrations before starting any services
-    from migrations import run_migrations
-
-    run_migrations()
-
     # Track all child processes for cleanup
     children = []
 
     # --- Start embedding service ---
     embedding_port = os.environ.get("EMBEDDING_SERVICE_PORT", "8002")
-    print(f"[entrypoint] Starting embedding service on port {embedding_port}...")
+    print(
+        f"[entrypoint] Starting embedding service on port {embedding_port}...")
     embedding_proc = subprocess.Popen([
         "python3.12", "-m", "uvicorn", "main:app",
         "--host", "0.0.0.0",
@@ -325,37 +221,49 @@ def main():
         "--app-dir", "/app/embedding-service",
     ])
     children.append(("embedding-service", embedding_proc))
-    wait_for_health(f"http://localhost:{embedding_port}/health", timeout=120, name="embedding-service")
+    wait_for_health(
+        f"http://localhost:{embedding_port}/health", timeout=120, name="embedding-service")
 
     # --- Start MCP discovery service ---
     mcp_discovery_port = os.environ.get("MCP_DISCOVERY_SERVICE_PORT", "8001")
     # TODO: Move env var plumbing to a config/env helper
     os.environ.setdefault("ENABLE_VECTOR_STORE", "true")
-    os.environ.setdefault("EMBEDDING_SERVICE_URL", f"http://localhost:{embedding_port}")
-    os.environ.setdefault("MCP_CONFIG_PATH", os.path.join(RUNTIME_DIR, STACK_YAML))
-    os.environ.setdefault("CAPABILITIES_CACHE_PATH", os.path.join(RUNTIME_DIR, "data", "mcp-capabilities.json"))
+    os.environ.setdefault("EMBEDDING_SERVICE_URL",
+                          f"http://localhost:{embedding_port}")
+    os.environ.setdefault(
+        "MCP_CONFIG_PATH", os.path.join(RUNTIME_DIR, STACK_YAML))
+    os.environ.setdefault("CAPABILITIES_CACHE_PATH", os.path.join(
+        RUNTIME_DIR, "data", "mcp-capabilities.json"))
     os.environ.setdefault("HOST", "0.0.0.0")
     os.environ.setdefault("PORT", mcp_discovery_port)
 
-    print(f"[entrypoint] Starting MCP discovery service on port {mcp_discovery_port}...")
+    print(
+        f"[entrypoint] Starting MCP discovery service on port {mcp_discovery_port}...")
     mcp_discovery_proc = subprocess.Popen([
         "python3.12", "/app/mcp-discovery-service/main.py",
     ])
     children.append(("mcp-discovery-service", mcp_discovery_proc))
-    wait_for_health(f"http://localhost:{mcp_discovery_port}/health", timeout=60, name="mcp-discovery-service")
+    wait_for_health(
+        f"http://localhost:{mcp_discovery_port}/health", timeout=60, name="mcp-discovery-service")
 
-    # --- Start lightspeed-stack ---
     service_config = stack_config.get("service", {})
-    backend_host = service_config.get("host", "0.0.0.0")
+    backend_host = "127.0.0.1"
     backend_port = service_config.get("port", 8080)
 
     backend_url = f"http://{backend_host}:{backend_port}"
     # TODO: Move env var plumbing to a config/env helper
     os.environ.setdefault("PROXY_BACKEND_URL", backend_url)
 
-    print(f"[entrypoint] Starting lightspeed-stack on {backend_host}:{backend_port}...")
-    backend = subprocess.Popen(["python3.12", "src/lightspeed_stack.py"])
-    children.append(("lightspeed-stack", backend))
+    os.environ.setdefault("AGENT_SQLITE_PATH",
+                          os.path.join(RUNTIME_DIR, "agent.sqlite"))
+    print(
+        f"[entrypoint] Starting Pydantic AI agent on {backend_host}:{backend_port}...")
+    backend = subprocess.Popen([
+        "/app/agent-service/.venv/bin/python", "-m", "uvicorn", "turn:create_app", "--factory",
+        "--app-dir", "/app/agent-service", "--host", backend_host, "--port", str(
+            backend_port),
+    ])
+    children.append(("agent", backend))
 
     # Forward signals to all child processes
     def handle_signal(signum, _frame):
@@ -373,12 +281,13 @@ def main():
     proxy_host = os.environ.get("PROXY_HOST", "0.0.0.0")
     proxy_port = int(os.environ.get("PROXY_PORT", "8000"))
     proxy_log_level = os.environ.get("PROXY_LOG_LEVEL", "warning")
-    print(f"[entrypoint] Starting reverse proxy on {proxy_host}:{proxy_port} (log_level={proxy_log_level})...")
+    print(
+        f"[entrypoint] Starting reverse proxy on {proxy_host}:{proxy_port} (log_level={proxy_log_level})...")
     import uvicorn
 
     try:
         uvicorn.run("proxy:app", host=proxy_host, port=proxy_port,
-                     log_level=proxy_log_level, app_dir="/app")
+                    log_level=proxy_log_level, app_dir="/app")
     finally:
         for name, proc in children:
             print(f"[entrypoint] Terminating {name} (pid={proc.pid})...")

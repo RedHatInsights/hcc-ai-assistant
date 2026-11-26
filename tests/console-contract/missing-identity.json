@@ -1,0 +1,8 @@
+{
+  "source": "Direct unauthenticated local proxy probe, not a console capture",
+  "response": {
+    "status": 401,
+    "content_type": "application/json",
+    "fields": [{"path": ["detail"], "type": "string"}]
+  }
+}

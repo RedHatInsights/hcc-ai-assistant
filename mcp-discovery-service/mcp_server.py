@@ -13,6 +13,8 @@ from starlette.responses import JSONResponse
 logger = logging.getLogger(__name__)
 
 # TODO: investigate intermittent 400 errors when lcore connects to mcp-discovery-server (seemingly during discovery sync)
+
+
 class MCPDiscoveryServer:
     """MCP server exposing discovery tools"""
 
@@ -27,7 +29,8 @@ class MCPDiscoveryServer:
         )
 
         # FastMCP - handles both SSE and Streamable HTTP automatically
-        self.mcp = FastMCP("mcp-discovery-server", transport_security=transport_security)
+        self.mcp = FastMCP("mcp-discovery-server",
+                           transport_security=transport_security)
         self._register_tools()
         self._register_custom_routes()
 
@@ -43,7 +46,8 @@ class MCPDiscoveryServer:
                 limit: Maximum number of results (default: 10)
             """
             results, method = await self.indexer.search(query, limit)
-            results_json = json.dumps([cap.model_dump() for cap in results], indent=2)
+            results_json = json.dumps([cap.model_dump()
+                                      for cap in results], indent=2)
             return f"Found {len(results)} MCP tools matching '{query}' (via {method}):\n\n{results_json}"
 
         @self.mcp.tool()
@@ -61,7 +65,8 @@ class MCPDiscoveryServer:
                     if cap.server_name == server_name
                 ]
 
-            capabilities_json = json.dumps([cap.model_dump() for cap in capabilities], indent=2)
+            capabilities_json = json.dumps(
+                [cap.model_dump() for cap in capabilities], indent=2)
             return f"Total MCP capabilities: {len(capabilities)}\nLast refresh: {self.indexer.last_refresh_time.isoformat()}\n\n{capabilities_json}"
 
         @self.mcp.tool()
@@ -104,7 +109,8 @@ class MCPDiscoveryServer:
             if not results:
                 return f"No tool recommendations found for task: '{task}'"
 
-            results_json = json.dumps([cap.model_dump() for cap in results], indent=2)
+            results_json = json.dumps([cap.model_dump()
+                                      for cap in results], indent=2)
             return f"Recommended {len(results)} tools for task '{task}' (via {method}):\n\n{results_json}"
 
     def _register_custom_routes(self):

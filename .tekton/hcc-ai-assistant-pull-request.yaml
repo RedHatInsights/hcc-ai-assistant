@@ -241,6 +241,7 @@ spec:
             set -e
 
             failed=""
+            cp -R /var/workdir/source /var/workdir/test-source
 
             # Auto-discover testable services (directories with pyproject.toml containing pytest)
             for pyproject in $(find /var/workdir/source -maxdepth 2 -name "pyproject.toml" -type f); do
@@ -259,8 +260,7 @@ spec:
                 echo "Testing $svc_name..."
                 echo "========================================="
 
-                cp -r "/var/workdir/source/$svc_path" "/var/workdir/${svc_name}-test"
-                cd "/var/workdir/${svc_name}-test"
+                cd "/var/workdir/test-source/$svc_path"
 
                 if [ -f "uv.lock" ]; then
                   pip install --quiet uv

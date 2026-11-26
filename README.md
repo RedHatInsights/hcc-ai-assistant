@@ -1,11 +1,11 @@
 # AI Assistant Service
 
-HTTP-based AI assistant service using LightSpeed stack with Google Vertex AI and MCP (Model Context Protocol) discovery capabilities.
+HTTP-based AI assistant service using Pydantic AI with Google Vertex AI and MCP (Model Context Protocol) discovery capabilities.
 
 ## Overview
 
-This project provides a production-ready AI assistant with:
-- **Google Vertex AI** integration via LightSpeed Core
+This project provides an AI assistant with:
+- **Google Vertex AI** integration via Pydantic AI
 - **MCP Tool Discovery** - automatically discovers and indexes available MCP tools
 - **Vector Embeddings** - semantic search powered by sentence-transformers + pgvector
 - **Subprocess Architecture** - all services run in a single container, communicating via localhost
@@ -22,9 +22,9 @@ All three services run as subprocesses within a single container, managed by `en
 │                                                │
 │  ┌──────────────────────┐                     │
 │  │ Reverse Proxy        │  port 8000          │
-│  │ + LightSpeed Stack   │◄────────────────────┤─ Public
+│  │ + Pydantic AI agent  │◄────────────────────┤─ Public
 │  │ - Google Vertex AI   │                     │
-│  │ - RAG capabilities   │                     │
+│  │ - MCP tool execution │                     │
 │  │ - Conversation cache │                     │
 │  └───────┬──────────────┘                     │
 │          │ localhost:8001/mcp                 │
@@ -48,7 +48,7 @@ All three services run as subprocesses within a single container, managed by `en
 └────────────────────────────────────────────────┘
 ```
 
-**Startup Order**: embedding-service -> mcp-discovery-service -> lightspeed-stack
+**Startup order**: embedding service -> MCP discovery -> Pydantic AI agent (internal port 8080) -> proxy. The Compose service retains its historical name, `lightspeed-stack`, but no LightSpeed Core process runs.
 
 For architecture decisions and patterns, see [Architecture Guidelines](./docs/architecture-guidelines.md).
 
@@ -77,16 +77,16 @@ curl http://localhost:8002/health     # Embedding Service
 ```
 
 Services will be available at:
-- **LightSpeed Stack**: http://localhost:8000
+- **Assistant via the existing proxy**: http://localhost:8000
 - **MCP Discovery**: http://localhost:8001
 - **Embedding Service**: http://localhost:8002
 
 ### Test the AI Assistant
 
 ```bash
-curl -X POST http://localhost:8000/v1/query \
+curl -X POST http://localhost:8000/api/ai-assistant/v1/query \
   -H "Content-Type: application/json" \
-  -H "x-rh-identity: test" \
+  -H "x-rh-identity: ${TEST_RH_IDENTITY}" \
   -d '{
     "query": "What MCP tools are available?",
     "provider": "google-vertex",
@@ -98,11 +98,10 @@ The LLM will automatically discover and use MCP tools to answer questions.
 
 ## Services
 
-### 1. LightSpeed Stack (Port 8000)
+### 1. Pydantic AI Agent (behind the proxy on port 8000)
 Main AI assistant service powered by Google Vertex AI.
 - Google Vertex AI integration (Gemini models)
-- RAG (Retrieval Augmented Generation)
-- Conversation caching
+- User-scoped conversation history
 - MCP tool discovery integration
 
 ### 2. MCP Discovery Service (Port 8001)

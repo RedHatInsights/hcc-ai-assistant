@@ -47,3 +47,17 @@ curl http://localhost:8002/health     # Embedding Service
 - `embedding-service/main.py` - Embedding + vector storage API
 - `mcp-discovery-service/main.py` - MCP tool indexer
 - `mcp-discovery-service/mcp_server.py` - MCP protocol server (4 tools)
+
+## Agent skills
+
+### Issue tracker
+
+Read and write issues as local Markdown under `.scratch/<feature>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default triage labels in each issue's `Status:` line. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use the single-context root glossary and shared ADRs when exploring the codebase. See `docs/agents/domain.md`.

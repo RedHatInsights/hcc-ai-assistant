@@ -1,3 +1,6 @@
 embedding-service/.venv
 mcp-discovery-service/.venv
 .git
+agent-service/.venv
+.env
+service-account-key.json

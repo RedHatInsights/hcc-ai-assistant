@@ -1,67 +1,63 @@
-  # docker-compose.yml
-  version: '3.8'
+# docker-compose.yml
+version: "3.8"
 
-  services:
-    postgres:
-      image: pgvector/pgvector:pg16
-      environment:
-        - POSTGRES_USER=postgres
-        - POSTGRES_PASSWORD=postgres
-        - POSTGRES_DB=hcc-ai-assistant
-      ports:
-        - "5432:5432"
-      volumes:
-        - pgdata:/var/lib/postgresql/data
-      healthcheck:
-        test: ["CMD-SHELL", "pg_isready -U postgres"]
-        interval: 5s
-        timeout: 3s
-        retries: 5
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=hcc-ai-assistant
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
-    lightspeed-stack:
-      build:
-        context: .
-        dockerfile: Dockerfile
-      ports:
-        - "8000:8000"  # Main API (reverse proxy)
-        - "8001:8001"   # MCP Discovery service (subprocess)
-        - "8002:8002"   # Embedding service (subprocess)
-      depends_on:
-        postgres:
-          condition: service_healthy
-      environment:
-        - VERTEX_PROJECT=${VERTEX_PROJECT}
-        - VERTEX_LOCATION=us-central1
-        - ALLOWED_MODEL=${ALLOWED_MODEL}
-        - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-        - GOOGLE_CLOUD_PROJECT=${VERTEX_PROJECT}
-        - OTEL_SDK_DISABLED=true
-        - LIGHTSPEED_STACK_CONFIG_PATH=/app-root/lightspeed-stack.yaml
-        - GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json
-        - KV_STORE_PATH=/app-root/.llama/storage/rag/kv_store.db
-        - SQL_STORE_PATH=/app-root/.llama/storage/sql_store.db
-        - STORAGE_DIR=/app-root/.llama/storage/files
-        # DB config for embedding service (pgvector)
-        - PGHOST=postgres
-        - PGPORT=5432
-        - PGDATABASE=hcc-ai-assistant
-        - PGUSER=postgres
-        - PGPASSWORD=postgres
-        # Subprocess service ports
-        - EMBEDDING_SERVICE_PORT=8002
-        - MCP_DISCOVERY_SERVICE_PORT=8001
-        - ENABLE_VECTOR_STORE=true
-      # Note: host.containers.internal works automatically in Podman and Docker Desktop
-      # Linux Docker users: add --add-host=host.containers.internal:host-gateway when running
-      volumes:
-        - ./service-account-key.json:/app/service-account-key.json:ro
-        - ./local_mcp_server_configs.json:/app/local_mcp_server_configs.json:ro
-      healthcheck:
-        test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/8000' || exit 1"]
-        interval: 10s
-        timeout: 5s
-        retries: 5
-        start_period: 120s
+  lightspeed-stack:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000" # Main API (reverse proxy)
+      - "8001:8001" # MCP Discovery service (subprocess)
+      - "8002:8002" # Embedding service (subprocess)
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - VERTEX_PROJECT=${VERTEX_PROJECT}
+      - VERTEX_LOCATION=${VERTEX_LOCATION:-us-central1}
+      - ALLOWED_MODEL=${ALLOWED_MODEL}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GOOGLE_CLOUD_PROJECT=${VERTEX_PROJECT}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/service-account-key.json
+      # DB config for embedding service (pgvector)
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGDATABASE=hcc-ai-assistant
+      - PGUSER=postgres
+      - PGPASSWORD=postgres
+      # Subprocess service ports
+      - EMBEDDING_SERVICE_PORT=8002
+      - MCP_DISCOVERY_SERVICE_PORT=8001
+      - ENABLE_VECTOR_STORE=true
+    # Note: host.containers.internal works automatically in Podman and Docker Desktop
+    # Linux Docker users: add --add-host=host.containers.internal:host-gateway when running
+    volumes:
+      - ./service-account-key.json:/app/service-account-key.json:ro
+      - ./local_mcp_server_configs.json:/app/local_mcp_server_configs.json:ro
+    healthcheck:
+      test:
+        ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/8000' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
 
-  volumes:
-    pgdata:
+volumes:
+  pgdata:

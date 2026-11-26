@@ -3,3 +3,7 @@
 __pycache__
 service-account-key.json
 test_vertex.py
+local-docs
+.scratch
+docs/adr
+docs/agents
