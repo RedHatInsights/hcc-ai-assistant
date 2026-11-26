@@ -178,6 +178,7 @@ async def test_welcome_prompt_stream_through_proxy(start_backend):
             {"id": 0, "token": "Synthetic "}, {"id": 1, "token": "console answer"}]
         assert events[-1]["data"]["truncated"] is False
         assert events[-1]["data"]["referenced_documents"] == []
+        assert events[-1]["data"]["tool_calls"] == []
         assert isinstance(events[-1]["data"]["input_tokens"], int)
         assert isinstance(events[-1]["data"]["output_tokens"], int)
         assert events[-1]["available_quotas"] == {}
@@ -323,6 +324,11 @@ async def test_dependent_tool_answer_in_one_turn(start_backend, tool_servers, ho
                                      json={"query": "What is the risk for my western host?"})
     assert response.status_code == 200
     assert response.json()["response"] == f"{host_id} has elevated risk"
+    assert response.json()["tool_calls"] == [
+        {"server_name": "mcp-discovery-server", "tool_name": "recommend_tools"},
+        {"server_name": "inventory", "tool_name": "lookup"},
+        {"server_name": "advisor", "tool_name": "risk"},
+    ]
     assert [(host, params["name"]) for host, method, _, params in requests if method == "tools/call"] == [
         ("discovery.test", "recommend_tools"), ("inventory.test", "lookup"), ("advisor.test", "risk")]
     for host, _, observed, _ in requests:
@@ -402,6 +408,7 @@ async def test_followup_requires_new_recommendation(start_backend, tool_servers)
         followup = await client.post(path, headers=caller_headers(), json={"query": "Use the same tool",
                                                                            "conversation_id": first.json()["conversation_id"]})
         assert followup.status_code == 200
+        assert followup.json()["tool_calls"] == []
         assert requests == []
 
 
