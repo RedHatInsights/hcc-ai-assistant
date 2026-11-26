@@ -13,6 +13,11 @@ DISCOVERY = "mcp-discovery-server"
 
 @asynccontextmanager
 async def connect(server, caller_headers):
+    """Yield an initialized MCP session for the configured server URL.
+
+    Forward only headers named in the server configuration. The session,
+    transport, and HTTP client are closed when the caller leaves the context.
+    """
     headers = {name: caller_headers[name] for name in server.get(
         "headers", []) if name in caller_headers}
     async with (
@@ -25,6 +30,11 @@ async def connect(server, caller_headers):
 
 
 def turn_tools(servers, caller_headers):
+    """Build discovery and execution tools that share recommendations for one turn.
+
+    Each discovery call replaces the previous recommendations. Execution also
+    checks the downstream server's current tool list using the caller's headers.
+    """
     recommended = set()
 
     async def recommend_tools(task: str, limit: int = 5) -> list[dict]:

@@ -24,6 +24,8 @@ from pydantic_ai.usage import RunUsage
 
 
 class Turn(BaseModel):
+    """Console query payload shared by the streaming and non-streaming routes."""
+
     model_config = ConfigDict(extra="forbid")
     query: str
     provider: Literal["google-vertex"] | None = None
@@ -33,7 +35,20 @@ class Turn(BaseModel):
     generate_topic_summary: Literal[False] = False
 
 
+class ConversationDetails(BaseModel):
+    """Public conversation identifier; list entries do not include stored messages."""
+
+    conversation_id: UUID
+
+
+class ConversationsListResponse(BaseModel):
+    """Conversation list for the requesting console user, including an empty list for a new user."""
+
+    conversations: list[ConversationDetails]
+
+
 def valid_claim(value: object) -> bool:
+    """Accept nonblank strings of at most 256 characters without ASCII control characters."""
     return (
         isinstance(value, str)
         and bool(value.strip())
@@ -43,6 +58,12 @@ def valid_claim(value: object) -> bool:
 
 
 async def require_console_user(request: Request) -> str:
+    """Derive a stable conversation owner key from a trusted gateway's User header.
+
+    Hash the organization and user IDs, not the mutable username. Raise HTTP
+    401 for a missing header or 400 for invalid encoding or claims. Decoding
+    the header does not authenticate its sender.
+    """
     header = request.headers.get("x-rh-identity")
     if not header:
         raise HTTPException(401, "Missing x-rh-identity header")
@@ -73,6 +94,11 @@ async def require_console_user(request: Request) -> str:
 
 
 def create_app(model: Model | None = None) -> FastAPI:
+    """Build the HTTP agent with configured shields, discovery servers, and conversation storage.
+
+    An injected model serves both classification and answering. When no model
+    is supplied, construct the Vertex model from the deployment environment.
+    """
     config_path = Path(os.getenv("MCP_CONFIG_PATH", Path(
         __file__).resolve().parents[1] / "lightspeed-stack.yaml"))
     config = yaml.safe_load(config_path.read_text())
@@ -86,6 +112,7 @@ def create_app(model: Model | None = None) -> FastAPI:
              for rule in redaction["rules"]]
 
     def redact(text: str) -> str:
+        """Apply the configured PII substitutions to text in rule order."""
         for pattern, replacement in rules:
             text = pattern.sub(replacement, text)
         return text
@@ -106,17 +133,33 @@ def create_app(model: Model | None = None) -> FastAPI:
 
     @app.get("/readiness")
     async def readiness():
+        """Report that the agent initialized; this does not probe Vertex or downstream tools."""
         return {"ready": True}
+
+    @app.get("/v1/conversations", response_model=ConversationsListResponse)
+    async def list_conversations(owner: str = Depends(require_console_user)):
+        """List the caller's saved conversation IDs without returning message content."""
+        ids = await asyncio.to_thread(conversations.list_ids, owner)
+        return {"conversations": [{"conversation_id": conversation_id} for conversation_id in ids]}
 
     @app.post("/v1/query")
     async def query(turn: Turn, request: Request, owner: str = Depends(require_console_user)):
+        """Return a completed turn as JSON, including its conversation ID, answer, and token usage."""
         return await answer_turn(turn, request, owner, streaming=False)
 
     @app.post("/v1/streaming_query")
     async def streaming_query(turn: Turn, request: Request, owner: str = Depends(require_console_user)):
+        """Stream a console turn as JSON data records: start, incremental answer text, then end."""
         return await answer_turn(turn, request, owner, streaming=True)
 
     async def answer_turn(turn: Turn, request: Request, owner: str, streaming: bool):
+        """Start or resume an owner-scoped conversation and apply the topic guard before answering.
+
+        A supplied conversation ID must belong to the caller, otherwise raise
+        HTTP 404. A rejected question yields the configured refusal without
+        adding the question to history. Streaming defers the save until the
+        event iterator runs; a non-streaming turn saves before returning JSON.
+        """
         conversation_id = str(turn.conversation_id or uuid4())
         revision, history = 0, []
         if turn.conversation_id is not None:
@@ -139,15 +182,18 @@ def create_app(model: Model | None = None) -> FastAPI:
             allowed = False
 
         async def save(messages):
+            """Serialize messages and persist them off the event loop; raise HTTP 409 on a stale update."""
             saved = await asyncio.to_thread(conversations.save, owner, conversation_id, revision,
                                             ModelMessagesTypeAdapter.dump_json(messages).decode())
             if not saved:
                 raise HTTPException(409, "Conversation changed during turn")
 
         def frame(event, data, **metadata):
+            """Encode one JSON event as a data line followed by a blank line for the stream reader."""
             return "data: " + json.dumps({"event": event, "data": data, **metadata}) + "\n\n"
 
         async def events():
+            """Yield the conversation ID and text deltas, then emit usage only after history is saved."""
             yield frame("start", {"conversation_id": conversation_id})
             messages = history
             if allowed:

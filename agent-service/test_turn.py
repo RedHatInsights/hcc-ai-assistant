@@ -94,9 +94,33 @@ def encoded(data):
     return base64.b64encode(json.dumps(data).encode()).decode()
 
 
+async def test_conversation_list_requires_identity(client, calls):
+    response = await client.get("/api/ai-assistant/v1/conversations")
+    assert response.status_code == 401
+    assert response.headers["content-type"] == "application/json"
+    assert isinstance(response.json()["detail"], str)
+    assert calls == []
+
+
 def caller_headers(tenant="org-a", user_id="test-id", username="synthetic-user"):
     return {"x-rh-identity": encoded({"identity": {"type": "User", "org_id": tenant,
                                                    "user": {"user_id": user_id, "username": username}}})}
+
+
+async def test_conversation_list_scoped_to_owner(client, calls):
+    path = "/api/ai-assistant/v1/conversations"
+    owner = caller_headers()
+    assert (await client.get(path, headers=owner)).json() == {"conversations": []}
+    created = await client.post("/api/ai-assistant/v1/query", headers=owner, json={"query": "What is HCC?"})
+    assert created.status_code == 200
+    calls.clear()
+    listed = await client.get(path, headers=owner)
+    assert listed.status_code == 200
+    assert listed.json() == {"conversations": [
+        {"conversation_id": created.json()["conversation_id"]}]}
+    for other in (caller_headers(tenant="org-b"), caller_headers(user_id="another-user")):
+        assert (await client.get(path, headers=other)).json() == {"conversations": []}
+    assert calls == []
 
 
 @asynccontextmanager

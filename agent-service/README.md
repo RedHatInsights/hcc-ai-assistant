@@ -74,6 +74,9 @@ with the success records verified against frontend source and its SDK fixture:
 `start`, incremental `token`, then `end` after persistence. A real loopback proxy
 test checks delivery before model completion and a typed follow-up. Tool-event
 reporting, error framing and deployed MIME/sequence parity remain unverified.
-List, read, update and delete routes have not been added. Neither this schema
+`GET /api/ai-assistant/v1/conversations` lists chats saved by this agent for the
+caller's organization and user ID. It returns `{"conversations": []}` for an empty list;
+each entry otherwise contains only `conversation_id`. No message history is returned.
+Individual conversation read, update and delete routes have not been added. Neither this schema
 nor an offline model reply proves console parity.
 Ticket 01 and a live synthetic Vertex smoke test remain cutover prerequisites.
