@@ -7,8 +7,7 @@ import socket
 import sqlite3
 import subprocess
 import tempfile
-from contextlib import closing
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -18,7 +17,13 @@ import psycopg2
 import pytest
 import uvicorn
 import yaml
-from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelResponse,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.models.function import FunctionModel
 from turn import create_app
 

@@ -1,18 +1,21 @@
+import json
+import os
+
+import pytest
+import yaml
+
 from entrypoint import (
     load_mcp_server_configs,
     merge_mcp_servers,
 )
-import yaml
-import pytest
-import os
-import json
 
 
 def test_default_process_flow(monkeypatch):
     from unittest.mock import Mock
 
-    import entrypoint
     import uvicorn
+
+    import entrypoint
 
     processes = Mock()
     monkeypatch.setattr(entrypoint, "load_clowder_config", lambda: None)

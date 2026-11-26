@@ -8,7 +8,6 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.types import TextContent
 from pydantic_ai import FunctionToolset, ModelRetry
 
-
 DISCOVERY = "mcp-discovery-server"
 
 
@@ -16,11 +15,13 @@ DISCOVERY = "mcp-discovery-server"
 async def connect(server, caller_headers):
     headers = {name: caller_headers[name] for name in server.get(
         "headers", []) if name in caller_headers}
-    async with httpx.AsyncClient(headers=headers, follow_redirects=False, trust_env=False) as client:
-        async with streamable_http_client(server["url"], http_client=client) as (reader, writer, _):
-            async with ClientSession(reader, writer) as session:
-                await session.initialize()
-                yield session
+    async with (
+        httpx.AsyncClient(headers=headers, follow_redirects=False, trust_env=False) as client,
+        streamable_http_client(server["url"], http_client=client) as (reader, writer, _),
+        ClientSession(reader, writer) as session,
+    ):
+        await session.initialize()
+        yield session
 
 
 def turn_tools(servers, caller_headers):
