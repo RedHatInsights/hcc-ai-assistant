@@ -227,12 +227,12 @@ def create_app(model: Model | None = None) -> FastAPI:
             "response": answer,
             "input_tokens": usage.input_tokens,
             "output_tokens": usage.output_tokens,
-            "truncated": False,
-            "rag_chunks": [],
-            "referenced_documents": [],
-            "tool_calls": [],
-            "tool_results": [],
-            "available_quotas": {},
+            # "truncated": False,
+            # "rag_chunks": [],
+            # "referenced_documents": [],
+            # "tool_calls": [],
+            # "tool_results": [],
+            # "available_quotas": {},
         }
 
     return app
