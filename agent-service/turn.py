@@ -174,6 +174,7 @@ def create_app(model: Model | None = None) -> FastAPI:
                         part.content = redact(part.content)
         question = redact(turn.query)
         usage = RunUsage()
+        tool_calls: list[dict[str, str]] = []
         try:
             verdict = await classifier.run(prompt.substitute(message=question, allowed="ALLOWED", rejected="REJECTED"),
                                            usage=usage)
@@ -198,7 +199,7 @@ def create_app(model: Model | None = None) -> FastAPI:
             messages = history
             if allowed:
                 async with agent.run_stream(question, message_history=history, usage=usage,
-                                            toolsets=[turn_tools(servers, request.headers)]) as result:
+                                            toolsets=[turn_tools(servers, request.headers, tool_calls)]) as result:
                     length = index = 0
                     async for text in result.stream_text(debounce_by=None):
                         if len(text) > length:
@@ -210,13 +211,13 @@ def create_app(model: Model | None = None) -> FastAPI:
                 yield frame("token", {"id": 0, "token": refusal})
             await save(messages)
             yield frame("end", {"referenced_documents": [], "truncated": False, "input_tokens": usage.input_tokens,
-                                "output_tokens": usage.output_tokens}, available_quotas={})
+                                "output_tokens": usage.output_tokens, "tool_calls": tool_calls}, available_quotas={})
 
         if streaming:
             return StreamingResponse(events(), media_type="application/json; charset=utf-8")
         if allowed:
             result = await agent.run(question, message_history=history, usage=usage,
-                                     toolsets=[turn_tools(servers, request.headers)])
+                                     toolsets=[turn_tools(servers, request.headers, tool_calls)])
             answer = result.output
             history = result.all_messages()
         else:
@@ -230,7 +231,7 @@ def create_app(model: Model | None = None) -> FastAPI:
             "truncated": False,
             "rag_chunks": [],
             "referenced_documents": [],
-            "tool_calls": [],
+            "tool_calls": tool_calls,
             "tool_results": [],
             "available_quotas": {},
         }

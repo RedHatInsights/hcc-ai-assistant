@@ -29,7 +29,7 @@ async def connect(server, caller_headers):
         yield session
 
 
-def turn_tools(servers, caller_headers):
+def turn_tools(servers, caller_headers, tool_calls: list[dict[str, str]]):
     """Build discovery and execution tools that share recommendations for one turn.
 
     Each discovery call replaces the previous recommendations. Execution also
@@ -37,13 +37,19 @@ def turn_tools(servers, caller_headers):
     """
     recommended = set()
 
+    async def call(session, server_name, tool_name, arguments):
+        # Record invocations, not recommendations, arguments or results.
+        # TODO: TO BE REMOVED LATER
+        tool_calls.append({"server_name": server_name, "tool_name": tool_name})
+        return await session.call_tool(tool_name, arguments)
+
     async def recommend_tools(task: str, limit: int = 5) -> list[dict]:
         """Find tools for this task before trying to execute one."""
         recommended.clear()
         if DISCOVERY not in servers:
             return []
         async with connect(servers[DISCOVERY], caller_headers) as session:
-            result = await session.call_tool("recommend_tools", {"task": task, "limit": limit})
+            result = await call(session, DISCOVERY, "recommend_tools", {"task": task, "limit": limit})
         if result.isError or len(result.content) != 1 or not isinstance(result.content[0], TextContent):
             return []
         text = result.content[0].text
@@ -74,7 +80,7 @@ def turn_tools(servers, caller_headers):
             while True:
                 page = await session.list_tools(cursor=cursor)
                 if any(tool.name == tool_name for tool in page.tools):
-                    result = await session.call_tool(tool_name, arguments)
+                    result = await call(session, server_name, tool_name, arguments)
                     break
                 cursor = page.nextCursor
                 if not cursor:
