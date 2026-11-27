@@ -9,8 +9,12 @@ from a2a.server.routes.common import DefaultServerCallContextBuilder
 from a2a.server.routes.jsonrpc_dispatcher import JsonRpcDispatcher
 from a2a.types.a2a_pb2 import ListTasksResponse, Message, Part, Role, SendMessageRequest
 from a2a.utils.errors import (
-    ContentTypeNotSupportedError, InternalError, InvalidParamsError, PushNotificationNotSupportedError,
-    TaskNotFoundError, UnsupportedOperationError,
+    ContentTypeNotSupportedError,
+    InternalError,
+    InvalidParamsError,
+    PushNotificationNotSupportedError,
+    TaskNotFoundError,
+    UnsupportedOperationError,
 )
 from fastapi import Depends, FastAPI, Request
 from guarded_turn import ConversationChanged, GuardedTurns

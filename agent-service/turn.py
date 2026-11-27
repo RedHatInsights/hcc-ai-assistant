@@ -13,9 +13,9 @@ import yaml
 from agent_card import mount_agent_card
 from agent_rpc import mount_agent_rpc
 from conversations import Conversations
-from guarded_turn import ConversationChanged, ConversationNotFound, GuardedTurns
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from guarded_turn import ConversationChanged, ConversationNotFound, GuardedTurns
 from pydantic import BaseModel, ConfigDict
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
