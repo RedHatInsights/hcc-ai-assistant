@@ -80,6 +80,8 @@ objects:
             value: ${VERTEX_LOCATION}
           - name: ALLOWED_MODEL
             value: ${ALLOWED_MODEL}
+          - name: A2A_PUBLIC_URL
+            value: ${A2A_PUBLIC_URL}
           - name: VERTEX_SECRET_PATH
             value: ${VERTEX_SECRET_PATH}
           - name: GOOGLE_APPLICATION_CREDENTIALS
@@ -105,6 +107,9 @@ parameters:
   required: true
 - name: ALLOWED_MODEL
   required: true
+- name: A2A_PUBLIC_URL
+  description: External HTTPS invocation URL advertised in the Agent Card. Leave empty to disable A2A.
+  value: ""
 - name: VERTEX_SECRET_PATH
   value: /opt/secrets/service-account-json
 - name: MIN_REPLICAS

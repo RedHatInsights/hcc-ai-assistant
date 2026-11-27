@@ -17,6 +17,7 @@ import psycopg2
 import pytest
 import uvicorn
 import yaml
+from conversations import Conversations
 from pydantic_ai.messages import (
     ModelResponse,
     TextPart,
@@ -92,6 +93,80 @@ async def test_missing_identity_rejected(client, calls):
 
 def encoded(data):
     return base64.b64encode(json.dumps(data).encode()).decode()
+
+
+async def test_agent_card_opt_in(start_backend, monkeypatch, calls):
+    path = "/api/ai-assistant/.well-known/agent-card.json"
+    monkeypatch.delenv("A2A_PUBLIC_URL", raising=False)
+    async with start_backend() as client:
+        assert (await client.get(path)).status_code == 404
+        assert (await client.post("/api/ai-assistant/a2a", json={})).status_code == 404
+
+    public_url = "https://gateway.example.test/api/ai-assistant/a2a"
+    monkeypatch.setenv("A2A_PUBLIC_URL", public_url)
+    async with start_backend() as client:
+        response = await client.get(path)
+    assert response.status_code == 200
+    card = response.json()
+    assert card["supportedInterfaces"] == [
+        {"url": public_url, "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}]
+    assert card["securitySchemes"]["bearer"]["httpAuthSecurityScheme"]["scheme"] == "bearer"
+    assert "bearer" in card["securityRequirements"][0]["schemes"]
+    assert card["defaultInputModes"] == card["defaultOutputModes"] == [
+        "text/plain"]
+    assert not card["capabilities"].get("streaming")
+    assert card["skills"][0]["id"] == "console-assistance"
+    assert card["skills"][0]["examples"]
+    assert calls == []
+
+
+def rpc_message(text, context_id=None):
+    message = {"messageId": str(uuid4()), "role": "ROLE_USER", "parts": [{"text": text}]}
+    if context_id is not None:
+        message["contextId"] = context_id
+    return {"jsonrpc": "2.0", "id": "rpc-1", "method": "SendMessage", "params": {"message": message}}
+
+
+async def test_a2a_send_message(start_backend, monkeypatch, calls):
+    monkeypatch.setenv("A2A_PUBLIC_URL", "https://gateway.example.test/api/ai-assistant/a2a")
+    path = "/api/ai-assistant/a2a"
+    headers = caller_headers() | {"A2A-Version": "1.0"}
+    async with start_backend() as client:
+        body = rpc_message("What is HCC?")
+        denied = await client.post(path, headers={"A2A-Version": "1.0"}, json=body)
+        assert denied.status_code == 401
+        assert calls == []
+        response = await client.post(path, headers=headers, json=body)
+        assert response.status_code == 200
+        assert "error" not in response.json(), response.text
+        result = response.json()["result"]["message"]
+        assert result["role"] == "ROLE_AGENT"
+        assert result["parts"] == [{"text": "Synthetic console answer"}]
+        followup = rpc_message("And what else?", result["contextId"])
+        resumed = await client.post(path, headers=headers, json=followup)
+        assert resumed.json()["result"]["message"]["parts"][0]["text"] == "I remember the synthetic answer"
+        isolated = await client.post(path, headers=headers | caller_headers(user_id="someone-else"), json=followup)
+        assert isolated.json()["result"]["message"]["parts"][0]["text"] == "Synthetic console answer"
+
+
+@pytest.mark.parametrize("verdict", ["REJECTED"])
+async def test_a2a_refusal_and_invalid_requests(start_backend, monkeypatch, calls, verdict):
+    monkeypatch.setenv("A2A_PUBLIC_URL", "https://gateway.example.test/api/ai-assistant/a2a")
+    path = "/api/ai-assistant/a2a"
+    headers = caller_headers() | {"A2A-Version": "1.0"}
+    async with start_backend() as client:
+        blank = rpc_message("   ")
+        nontext = rpc_message("placeholder")
+        nontext["params"]["message"]["parts"] = [{"data": {"value": 1}}]
+        stream = rpc_message("Hello") | {"method": "SendStreamingMessage"}
+        for body, code in ((blank, -32602), (nontext, -32005), (stream, -32004)):
+            response = await client.post(path, headers=headers, json=body)
+            assert response.json()["error"]["code"] == code, response.text
+        assert calls == []
+        response = await client.post(path, headers=headers, json=rpc_message("Write a cake recipe"))
+        reply = response.json()["result"]["message"]
+        assert reply["metadata"] == {"hccOutcome": "policy_blocked"}
+        assert reply["parts"][0]["text"] and len(calls) == 1
 
 
 async def test_conversation_list_requires_identity(client, calls):
@@ -263,7 +338,8 @@ def tool_servers(tmp_path, monkeypatch, host_id, lookup_error):
 @pytest.mark.parametrize(("lookup_error", "expected_answer"), [
     (None, "host-83c19"),
     ("Permission denied", "Permission denied for this tool."),
-    ("Internal error: synthetic-sensitive-detail", "The downstream tool could not complete the request."),
+    ("Internal error: synthetic-sensitive-detail",
+     "The downstream tool could not complete the request."),
 ])
 async def test_discovered_tool_answer_uses_current_caller(start_backend, tool_servers, lookup_error, expected_answer):
     requests, _ = tool_servers
@@ -497,6 +573,36 @@ def isolated_postgres(monkeypatch, tmp_path):
         finally:
             subprocess.run(["pg_ctl", "-D", data, "-m",
                            "fast", "-w", "stop"], check=True)
+
+
+@pytest.mark.parametrize("backend", ["sqlite", "postgres"])
+async def test_a2a_context_mapping(backend, request, tmp_path, monkeypatch):
+    if backend == "postgres":
+        request.getfixturevalue("isolated_postgres")
+    else:
+        monkeypatch.delenv("PGHOST", raising=False)
+        monkeypatch.setenv("AGENT_SQLITE_PATH", str(
+            tmp_path / "contexts.sqlite"))
+    store = Conversations()
+    thread = "mas/thread:not-a-uuid"
+    first, concurrent = await asyncio.gather(*(asyncio.to_thread(store.resolve_a2a_context, "owner-a", thread)
+                                               for _ in range(2)))
+    assert first == concurrent
+    assert first.context_id == thread
+    internal_id = str(first.conversation_id)
+    assert store.load("owner-a", internal_id) == (1, "[]")
+    assert store.save("owner-a", internal_id, 1, '["first turn"]')
+    restarted = Conversations()
+    assert restarted.resolve_a2a_context("owner-a", thread) == first
+    assert restarted.load("owner-a", internal_id) == (2, '["first turn"]')
+    other = restarted.resolve_a2a_context("owner-b", thread)
+    assert other.conversation_id != first.conversation_id
+    assert restarted.load("owner-b", internal_id) is None
+    assert restarted.load("owner-b", str(other.conversation_id)) == (1, "[]")
+    generated = restarted.resolve_a2a_context("owner-a")
+    assert generated.context_id and generated.conversation_id != first.conversation_id
+    assert restarted.resolve_a2a_context(
+        "owner-a", generated.context_id) == generated
 
 
 @pytest.mark.asyncio

@@ -7,20 +7,20 @@ import re
 from pathlib import Path
 from string import Template
 from typing import Literal
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import yaml
+from agent_card import mount_agent_card
+from agent_rpc import mount_agent_rpc
 from conversations import Conversations
-from discovered_tools import turn_tools
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from guarded_turn import ConversationChanged, ConversationNotFound, GuardedTurns
 from pydantic import BaseModel, ConfigDict
-from pydantic_ai import Agent, ModelMessagesTypeAdapter, UnexpectedModelBehavior
-from pydantic_ai.messages import TextPart, UserPromptPart
+from pydantic_ai import Agent
 from pydantic_ai.models import Model
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google_cloud import GoogleCloudProvider
-from pydantic_ai.usage import RunUsage
 
 
 class Turn(BaseModel):
@@ -129,7 +129,11 @@ def create_app(model: Model | None = None) -> FastAPI:
     prompt = Template(guard["model_prompt"])
     refusal = guard["invalid_question_response"]
     conversations = Conversations()
+    turns = GuardedTurns(conversations, agent, classifier, prompt, refusal, redact, servers)
     app = FastAPI()
+    mount_agent_card(app)
+    if os.getenv("A2A_PUBLIC_URL"):
+        mount_agent_rpc(app, turns, require_console_user)
 
     @app.get("/readiness")
     async def readiness():
@@ -145,49 +149,28 @@ def create_app(model: Model | None = None) -> FastAPI:
     @app.post("/v1/query")
     async def query(turn: Turn, request: Request, owner: str = Depends(require_console_user)):
         """Return a completed turn as JSON, including its conversation ID, answer, and token usage."""
-        return await answer_turn(turn, request, owner, streaming=False)
+        prepared = await prepare_console_turn(turn, request, owner)
+        try:
+            answer = await prepared.complete()
+        except ConversationChanged as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {
+            "conversation_id": prepared.conversation_id,
+            "response": answer,
+            "input_tokens": prepared.usage.input_tokens,
+            "output_tokens": prepared.usage.output_tokens,
+            "truncated": False,
+            "rag_chunks": [],
+            "referenced_documents": [],
+            "tool_calls": prepared.tool_calls,
+            "tool_results": [],
+            "available_quotas": {},
+        }
 
     @app.post("/v1/streaming_query")
     async def streaming_query(turn: Turn, request: Request, owner: str = Depends(require_console_user)):
         """Stream a console turn as JSON data records: start, incremental answer text, then end."""
-        return await answer_turn(turn, request, owner, streaming=True)
-
-    async def answer_turn(turn: Turn, request: Request, owner: str, streaming: bool):
-        """Start or resume an owner-scoped conversation and apply the topic guard before answering.
-
-        A supplied conversation ID must belong to the caller, otherwise raise
-        HTTP 404. A rejected question yields the configured refusal without
-        adding the question to history. Streaming defers the save until the
-        event iterator runs; a non-streaming turn saves before returning JSON.
-        """
-        conversation_id = str(turn.conversation_id or uuid4())
-        revision, history = 0, []
-        if turn.conversation_id is not None:
-            previous = await asyncio.to_thread(conversations.load, owner, conversation_id)
-            if previous is None:
-                raise HTTPException(404, "Conversation not found")
-            revision, serialized = previous
-            history = ModelMessagesTypeAdapter.validate_json(serialized)
-            for message in history:
-                for part in message.parts:
-                    if isinstance(part, (UserPromptPart, TextPart)) and isinstance(part.content, str):
-                        part.content = redact(part.content)
-        question = redact(turn.query)
-        usage = RunUsage()
-        tool_calls: list[dict[str, str]] = []
-        try:
-            verdict = await classifier.run(prompt.substitute(message=question, allowed="ALLOWED", rejected="REJECTED"),
-                                           usage=usage)
-            allowed = verdict.output.strip() == "ALLOWED"
-        except UnexpectedModelBehavior:
-            allowed = False
-
-        async def save(messages):
-            """Serialize messages and persist them off the event loop; raise HTTP 409 on a stale update."""
-            saved = await asyncio.to_thread(conversations.save, owner, conversation_id, revision,
-                                            ModelMessagesTypeAdapter.dump_json(messages).decode())
-            if not saved:
-                raise HTTPException(409, "Conversation changed during turn")
+        prepared = await prepare_console_turn(turn, request, owner)
 
         def frame(event, data, **metadata):
             """Encode one JSON event as a data line followed by a blank line for the stream reader."""
@@ -195,45 +178,24 @@ def create_app(model: Model | None = None) -> FastAPI:
 
         async def events():
             """Yield the conversation ID and text deltas, then emit usage only after history is saved."""
-            yield frame("start", {"conversation_id": conversation_id})
-            messages = history
-            if allowed:
-                async with agent.run_stream(question, message_history=history, usage=usage,
-                                            toolsets=[turn_tools(servers, request.headers, tool_calls)]) as result:
-                    length = index = 0
-                    async for text in result.stream_text(debounce_by=None):
-                        if len(text) > length:
-                            yield frame("token", {"id": index, "token": text[length:]})
-                            length = len(text)
-                            index += 1
-                    messages = result.all_messages()
-            else:
-                yield frame("token", {"id": 0, "token": refusal})
-            await save(messages)
-            yield frame("end", {"referenced_documents": [], "truncated": False, "input_tokens": usage.input_tokens,
-                                "output_tokens": usage.output_tokens, "tool_calls": tool_calls}, available_quotas={})
+            yield frame("start", {"conversation_id": prepared.conversation_id})
+            index = 0
+            try:
+                async for delta in prepared.stream():
+                    yield frame("token", {"id": index, "token": delta})
+                    index += 1
+            except ConversationChanged as exc:
+                raise HTTPException(409, str(exc)) from exc
+            yield frame("end", {"referenced_documents": [], "truncated": False, "input_tokens": prepared.usage.input_tokens,
+                                "output_tokens": prepared.usage.output_tokens, "tool_calls": prepared.tool_calls},
+                        available_quotas={})
 
-        if streaming:
-            return StreamingResponse(events(), media_type="application/json; charset=utf-8")
-        if allowed:
-            result = await agent.run(question, message_history=history, usage=usage,
-                                     toolsets=[turn_tools(servers, request.headers, tool_calls)])
-            answer = result.output
-            history = result.all_messages()
-        else:
-            answer = refusal
-        await save(history)
-        return {
-            "conversation_id": conversation_id,
-            "response": answer,
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "truncated": False,
-            "rag_chunks": [],
-            "referenced_documents": [],
-            "tool_calls": tool_calls,
-            "tool_results": [],
-            "available_quotas": {},
-        }
+        return StreamingResponse(events(), media_type="application/json; charset=utf-8")
+
+    async def prepare_console_turn(turn: Turn, request: Request, owner: str):
+        try:
+            return await turns.prepare(turn.query, turn.conversation_id, owner, request.headers)
+        except ConversationNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
 
     return app
