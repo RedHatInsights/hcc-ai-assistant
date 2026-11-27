@@ -11,7 +11,7 @@ RUN --mount=type=cache,id=hcc-agent-uv,target=/root/.cache/uv \
     uv sync --python /usr/bin/python3.12 --locked --no-dev --no-install-project --no-python-downloads
 
 FROM agent-deps AS runtime
-COPY agent-service/turn.py agent-service/guarded_turn.py agent-service/conversations.py agent-service/discovered_tools.py agent-service/agent_card.py ./
+COPY agent-service/turn.py agent-service/guarded_turn.py agent-service/conversations.py agent-service/discovered_tools.py agent-service/agent_card.py agent-service/agent_rpc.py ./
 
 WORKDIR /app
 ARG UV_HTTP_TIMEOUT=120

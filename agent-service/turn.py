@@ -11,6 +11,7 @@ from uuid import UUID
 
 import yaml
 from agent_card import mount_agent_card
+from agent_rpc import mount_agent_rpc
 from conversations import Conversations
 from guarded_turn import ConversationChanged, ConversationNotFound, GuardedTurns
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -131,6 +132,8 @@ def create_app(model: Model | None = None) -> FastAPI:
     turns = GuardedTurns(conversations, agent, classifier, prompt, refusal, redact, servers)
     app = FastAPI()
     mount_agent_card(app)
+    if os.getenv("A2A_PUBLIC_URL"):
+        mount_agent_rpc(app, turns, require_console_user)
 
     @app.get("/readiness")
     async def readiness():

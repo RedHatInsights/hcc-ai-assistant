@@ -100,12 +100,12 @@ async def test_agent_card_opt_in(start_backend, monkeypatch, calls):
     monkeypatch.delenv("A2A_PUBLIC_URL", raising=False)
     async with start_backend() as client:
         assert (await client.get(path)).status_code == 404
+        assert (await client.post("/api/ai-assistant/a2a", json={})).status_code == 404
 
     public_url = "https://gateway.example.test/api/ai-assistant/a2a"
     monkeypatch.setenv("A2A_PUBLIC_URL", public_url)
     async with start_backend() as client:
         response = await client.get(path)
-        assert (await client.post("/api/ai-assistant/a2a", json={})).status_code == 404
     assert response.status_code == 200
     card = response.json()
     assert card["supportedInterfaces"] == [
@@ -118,6 +118,55 @@ async def test_agent_card_opt_in(start_backend, monkeypatch, calls):
     assert card["skills"][0]["id"] == "console-assistance"
     assert card["skills"][0]["examples"]
     assert calls == []
+
+
+def rpc_message(text, context_id=None):
+    message = {"messageId": str(uuid4()), "role": "ROLE_USER", "parts": [{"text": text}]}
+    if context_id is not None:
+        message["contextId"] = context_id
+    return {"jsonrpc": "2.0", "id": "rpc-1", "method": "SendMessage", "params": {"message": message}}
+
+
+async def test_a2a_send_message(start_backend, monkeypatch, calls):
+    monkeypatch.setenv("A2A_PUBLIC_URL", "https://gateway.example.test/api/ai-assistant/a2a")
+    path = "/api/ai-assistant/a2a"
+    headers = caller_headers() | {"A2A-Version": "1.0"}
+    async with start_backend() as client:
+        body = rpc_message("What is HCC?")
+        denied = await client.post(path, headers={"A2A-Version": "1.0"}, json=body)
+        assert denied.status_code == 401
+        assert calls == []
+        response = await client.post(path, headers=headers, json=body)
+        assert response.status_code == 200
+        assert "error" not in response.json(), response.text
+        result = response.json()["result"]["message"]
+        assert result["role"] == "ROLE_AGENT"
+        assert result["parts"] == [{"text": "Synthetic console answer"}]
+        followup = rpc_message("And what else?", result["contextId"])
+        resumed = await client.post(path, headers=headers, json=followup)
+        assert resumed.json()["result"]["message"]["parts"][0]["text"] == "I remember the synthetic answer"
+        isolated = await client.post(path, headers=headers | caller_headers(user_id="someone-else"), json=followup)
+        assert isolated.json()["result"]["message"]["parts"][0]["text"] == "Synthetic console answer"
+
+
+@pytest.mark.parametrize("verdict", ["REJECTED"])
+async def test_a2a_refusal_and_invalid_requests(start_backend, monkeypatch, calls, verdict):
+    monkeypatch.setenv("A2A_PUBLIC_URL", "https://gateway.example.test/api/ai-assistant/a2a")
+    path = "/api/ai-assistant/a2a"
+    headers = caller_headers() | {"A2A-Version": "1.0"}
+    async with start_backend() as client:
+        blank = rpc_message("   ")
+        nontext = rpc_message("placeholder")
+        nontext["params"]["message"]["parts"] = [{"data": {"value": 1}}]
+        stream = rpc_message("Hello") | {"method": "SendStreamingMessage"}
+        for body, code in ((blank, -32602), (nontext, -32005), (stream, -32004)):
+            response = await client.post(path, headers=headers, json=body)
+            assert response.json()["error"]["code"] == code, response.text
+        assert calls == []
+        response = await client.post(path, headers=headers, json=rpc_message("Write a cake recipe"))
+        reply = response.json()["result"]["message"]
+        assert reply["metadata"] == {"hccOutcome": "policy_blocked"}
+        assert reply["parts"][0]["text"] and len(calls) == 1
 
 
 async def test_conversation_list_requires_identity(client, calls):

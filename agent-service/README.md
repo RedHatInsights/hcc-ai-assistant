@@ -56,21 +56,25 @@ and `agent_a2a_contexts_v1` if absent; no legacy or embedding data is migrated.
 Without `PGHOST`, set an explicit SQLite file in a private directory. Both stores
 contain message history, not just IDs; use synthetic data in this test backend.
 
-## A2A discovery (opt-in)
+## A2A discovery and invocation (opt-in)
 
-Leave `A2A_PUBLIC_URL` unset to disable discovery (the default). To preview the Agent Card,
+Leave `A2A_PUBLIC_URL` unset to disable both A2A routes (the default). To enable them,
 set it to the full external HTTPS invocation URL, including the gateway prefix, before startup.
 For example: `https://gateway.example.test/api/ai-assistant/a2a`.
 Fetch the card via `GET /api/ai-assistant/.well-known/agent-card.json` on the proxy.
 The backend serves the card without requiring a console identity; gateway access policy is separate.
 The card describes a text-only A2A 1.0 JSON-RPC interface and bearer authentication.
-Only discovery is implemented. Keep it disabled in deployed environments until invocation is available.
+Send native `SendMessage` requests to `POST /api/ai-assistant/a2a` with `A2A-Version: 1.0`.
+The gateway authenticates the bearer token; this endpoint requires the same trusted User identity as console queries.
+The direct reply is in `result.message`, with text parts and the context ID for follow-ups. An HCC policy refusal
+has `result.message.metadata.hccOutcome` set to `policy_blocked` (local convention, not an agreed MAS extension).
+Streaming, task continuation and push notifications are not supported. Verify gateway policy before rollout.
 
 The storage layer can map an opaque A2A `contextId` (nonblank, at most 512 UTF-8 bytes,
 no NUL) to a conversation UUID for the verified owner. If omitted, it generates a context ID
 to return to the client. First resolution reserves an empty conversation visible in that owner's
 conversation list; later resolutions reuse its history. Another owner using the same external
-ID gets an independent conversation. No HTTP endpoint uses this mapping yet.
+ID gets an independent conversation.
 
 ## Provisional contract
 
