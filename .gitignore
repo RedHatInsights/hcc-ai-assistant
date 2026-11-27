@@ -7,4 +7,3 @@ local-docs
 .scratch
 docs/adr
 docs/agents
-local_mcp_server_configs.json

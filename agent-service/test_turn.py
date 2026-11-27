@@ -193,7 +193,12 @@ def host_id():
 
 
 @pytest.fixture
-def tool_servers(tmp_path, monkeypatch, host_id):
+def lookup_error():
+    return None
+
+
+@pytest.fixture
+def tool_servers(tmp_path, monkeypatch, host_id, lookup_error):
     config = yaml.safe_load(
         (Path(__file__).resolve().parents[1] / "lightspeed-stack.yaml").read_text())
     config["mcp_servers"] = [
@@ -241,6 +246,9 @@ def tool_servers(tmp_path, monkeypatch, host_id):
             else:
                 assert request.url.host == "inventory.test"
                 assert body["params"]["arguments"] == {"region": "west"}
+                if lookup_error:
+                    return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"],
+                                                     "error": {"code": -32000, "message": lookup_error}})
                 text = host_id
             result = {"content": [{"type": "text", "text": text}]}
         else:
@@ -252,7 +260,12 @@ def tool_servers(tmp_path, monkeypatch, host_id):
     return requests, capability
 
 
-async def test_discovered_tool_answer_uses_current_caller(start_backend, tool_servers):
+@pytest.mark.parametrize(("lookup_error", "expected_answer"), [
+    (None, "host-83c19"),
+    ("Permission denied", "Permission denied for this tool."),
+    ("Internal error: synthetic-sensitive-detail", "The downstream tool could not complete the request."),
+])
+async def test_discovered_tool_answer_uses_current_caller(start_backend, tool_servers, lookup_error, expected_answer):
     requests, _ = tool_servers
 
     def respond(messages, info):
@@ -280,7 +293,8 @@ async def test_discovered_tool_answer_uses_current_caller(start_backend, tool_se
             headers = caller_headers(user_id=caller) | {
                 "x-trace": f"trace-{caller}", "authorization": "synthetic-auth-only"}
             response = await client.post("/api/ai-assistant/v1/query", headers=headers, json={"query": "Find my hosts"})
-            assert response.json()["response"] == "host-83c19"
+            assert response.status_code == 200
+            assert response.json()["response"] == expected_answer
             assert [(host, params["name"]) for host, method, _, params in requests if method == "tools/call"] == [
                 ("discovery.test", "recommend_tools"), ("inventory.test", "lookup")]
             for host, _, observed, _ in requests:
