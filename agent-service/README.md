@@ -51,8 +51,8 @@ has accepted credentials or has quota. `GET /liveness` is independent of the age
 
 When `PGHOST` is set, the agent uses PostgreSQL with the deployment's existing
 libpq `PG*` settings (including TLS), even if `AGENT_SQLITE_PATH` is set. A failed
-connection does not fall back to SQLite. Initialization only creates the new
-`agent_conversations_v1` table if absent; no legacy or embedding data is migrated.
+connection does not fall back to SQLite. Initialization creates `agent_conversations_v1`
+and `agent_a2a_contexts_v1` if absent; no legacy or embedding data is migrated.
 Without `PGHOST`, set an explicit SQLite file in a private directory. Both stores
 contain message history, not just IDs; use synthetic data in this test backend.
 
@@ -65,6 +65,12 @@ Fetch the card via `GET /api/ai-assistant/.well-known/agent-card.json` on the pr
 The backend serves the card without requiring a console identity; gateway access policy is separate.
 The card describes a text-only A2A 1.0 JSON-RPC interface and bearer authentication.
 Only discovery is implemented. Keep it disabled in deployed environments until invocation is available.
+
+The storage layer can map an opaque A2A `contextId` (nonblank, at most 512 UTF-8 bytes,
+no NUL) to a conversation UUID for the verified owner. If omitted, it generates a context ID
+to return to the client. First resolution reserves an empty conversation visible in that owner's
+conversation list; later resolutions reuse its history. Another owner using the same external
+ID gets an independent conversation. No HTTP endpoint uses this mapping yet.
 
 ## Provisional contract
 

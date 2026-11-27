@@ -17,6 +17,7 @@ import psycopg2
 import pytest
 import uvicorn
 import yaml
+from conversations import Conversations
 from pydantic_ai.messages import (
     ModelResponse,
     TextPart,
@@ -107,10 +108,12 @@ async def test_agent_card_opt_in(start_backend, monkeypatch, calls):
         assert (await client.post("/api/ai-assistant/a2a", json={})).status_code == 404
     assert response.status_code == 200
     card = response.json()
-    assert card["supportedInterfaces"] == [{"url": public_url, "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}]
+    assert card["supportedInterfaces"] == [
+        {"url": public_url, "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}]
     assert card["securitySchemes"]["bearer"]["httpAuthSecurityScheme"]["scheme"] == "bearer"
     assert "bearer" in card["securityRequirements"][0]["schemes"]
-    assert card["defaultInputModes"] == card["defaultOutputModes"] == ["text/plain"]
+    assert card["defaultInputModes"] == card["defaultOutputModes"] == [
+        "text/plain"]
     assert not card["capabilities"].get("streaming")
     assert card["skills"][0]["id"] == "console-assistance"
     assert card["skills"][0]["examples"]
@@ -286,7 +289,8 @@ def tool_servers(tmp_path, monkeypatch, host_id, lookup_error):
 @pytest.mark.parametrize(("lookup_error", "expected_answer"), [
     (None, "host-83c19"),
     ("Permission denied", "Permission denied for this tool."),
-    ("Internal error: synthetic-sensitive-detail", "The downstream tool could not complete the request."),
+    ("Internal error: synthetic-sensitive-detail",
+     "The downstream tool could not complete the request."),
 ])
 async def test_discovered_tool_answer_uses_current_caller(start_backend, tool_servers, lookup_error, expected_answer):
     requests, _ = tool_servers
@@ -520,6 +524,36 @@ def isolated_postgres(monkeypatch, tmp_path):
         finally:
             subprocess.run(["pg_ctl", "-D", data, "-m",
                            "fast", "-w", "stop"], check=True)
+
+
+@pytest.mark.parametrize("backend", ["sqlite", "postgres"])
+async def test_a2a_context_mapping(backend, request, tmp_path, monkeypatch):
+    if backend == "postgres":
+        request.getfixturevalue("isolated_postgres")
+    else:
+        monkeypatch.delenv("PGHOST", raising=False)
+        monkeypatch.setenv("AGENT_SQLITE_PATH", str(
+            tmp_path / "contexts.sqlite"))
+    store = Conversations()
+    thread = "mas/thread:not-a-uuid"
+    first, concurrent = await asyncio.gather(*(asyncio.to_thread(store.resolve_a2a_context, "owner-a", thread)
+                                               for _ in range(2)))
+    assert first == concurrent
+    assert first.context_id == thread
+    internal_id = str(first.conversation_id)
+    assert store.load("owner-a", internal_id) == (1, "[]")
+    assert store.save("owner-a", internal_id, 1, '["first turn"]')
+    restarted = Conversations()
+    assert restarted.resolve_a2a_context("owner-a", thread) == first
+    assert restarted.load("owner-a", internal_id) == (2, '["first turn"]')
+    other = restarted.resolve_a2a_context("owner-b", thread)
+    assert other.conversation_id != first.conversation_id
+    assert restarted.load("owner-b", internal_id) is None
+    assert restarted.load("owner-b", str(other.conversation_id)) == (1, "[]")
+    generated = restarted.resolve_a2a_context("owner-a")
+    assert generated.context_id and generated.conversation_id != first.conversation_id
+    assert restarted.resolve_a2a_context(
+        "owner-a", generated.context_id) == generated
 
 
 @pytest.mark.asyncio

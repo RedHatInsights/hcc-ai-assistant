@@ -46,6 +46,7 @@ services:
       - EMBEDDING_SERVICE_PORT=8002
       - MCP_DISCOVERY_SERVICE_PORT=8001
       - ENABLE_VECTOR_STORE=true
+      - A2A_PUBLIC_URL=${A2A_PUBLIC_URL} # for a2a
     # Note: host.containers.internal works automatically in Podman and Docker Desktop
     # Linux Docker users: add --add-host=host.containers.internal:host-gateway when running
     volumes:
