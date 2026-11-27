@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared.exceptions import McpError
 from mcp.types import TextContent
 from pydantic_ai import FunctionToolset, ModelRetry
 
@@ -80,7 +81,12 @@ def turn_tools(servers, caller_headers, tool_calls: list[dict[str, str]]):
             while True:
                 page = await session.list_tools(cursor=cursor)
                 if any(tool.name == tool_name for tool in page.tools):
-                    result = await call(session, server_name, tool_name, arguments)
+                    try:
+                        result = await call(session, server_name, tool_name, arguments)
+                    except McpError as error:
+                        if error.error.message.strip().casefold() == "permission denied":
+                            return "Permission denied for this tool."
+                        return "The downstream tool could not complete the request."
                     break
                 cursor = page.nextCursor
                 if not cursor:
