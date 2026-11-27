@@ -66,6 +66,18 @@ oc process -f config/clowdapp.yaml \
   | oc apply -f -
 ```
 
+### A2A gateway configuration
+
+Leave the optional `A2A_PUBLIC_URL` template parameter empty to keep discovery and invocation disabled.
+For stage, set it to `https://console.stage.redhat.com/api/ai-assistant/a2a` only after the gateway
+route and end-user identity policy are confirmed. This is the public invocation URL, not the card URL
+or a credential. Setting it does not create a gateway route or change the console query endpoints.
+
+After rollout, fetch `GET /api/ai-assistant/.well-known/agent-card.json` through the gateway and check
+that the JSON-RPC 1.0 interface advertises the configured URL. Use an approved test user's bearer token
+to send `SendMessage` there, then send a follow-up with the returned `contextId`. Verify invocation
+rejects missing or invalid credentials and that the existing `POST /api/ai-assistant/v1/query` still works.
+
 ### Resource Requirements
 
 | Component | CPU Request | CPU Limit | Memory Request | Memory Limit |
