@@ -94,6 +94,29 @@ def encoded(data):
     return base64.b64encode(json.dumps(data).encode()).decode()
 
 
+async def test_agent_card_opt_in(start_backend, monkeypatch, calls):
+    path = "/api/ai-assistant/.well-known/agent-card.json"
+    monkeypatch.delenv("A2A_PUBLIC_URL", raising=False)
+    async with start_backend() as client:
+        assert (await client.get(path)).status_code == 404
+
+    public_url = "https://gateway.example.test/api/ai-assistant/a2a"
+    monkeypatch.setenv("A2A_PUBLIC_URL", public_url)
+    async with start_backend() as client:
+        response = await client.get(path)
+        assert (await client.post("/api/ai-assistant/a2a", json={})).status_code == 404
+    assert response.status_code == 200
+    card = response.json()
+    assert card["supportedInterfaces"] == [{"url": public_url, "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}]
+    assert card["securitySchemes"]["bearer"]["httpAuthSecurityScheme"]["scheme"] == "bearer"
+    assert "bearer" in card["securityRequirements"][0]["schemes"]
+    assert card["defaultInputModes"] == card["defaultOutputModes"] == ["text/plain"]
+    assert not card["capabilities"].get("streaming")
+    assert card["skills"][0]["id"] == "console-assistance"
+    assert card["skills"][0]["examples"]
+    assert calls == []
+
+
 async def test_conversation_list_requires_identity(client, calls):
     response = await client.get("/api/ai-assistant/v1/conversations")
     assert response.status_code == 401

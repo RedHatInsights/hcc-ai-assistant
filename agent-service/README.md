@@ -56,6 +56,16 @@ connection does not fall back to SQLite. Initialization only creates the new
 Without `PGHOST`, set an explicit SQLite file in a private directory. Both stores
 contain message history, not just IDs; use synthetic data in this test backend.
 
+## A2A discovery (opt-in)
+
+Leave `A2A_PUBLIC_URL` unset to disable discovery (the default). To preview the Agent Card,
+set it to the full external HTTPS invocation URL, including the gateway prefix, before startup.
+For example: `https://gateway.example.test/api/ai-assistant/a2a`.
+Fetch the card via `GET /api/ai-assistant/.well-known/agent-card.json` on the proxy.
+The backend serves the card without requiring a console identity; gateway access policy is separate.
+The card describes a text-only A2A 1.0 JSON-RPC interface and bearer authentication.
+Only discovery is implemented. Keep it disabled in deployed environments until invocation is available.
+
 ## Provisional contract
 
 Local lightspeed-stack revision `634d32eb9affba8b7022ed4dd8efc8bd0fac345a`:

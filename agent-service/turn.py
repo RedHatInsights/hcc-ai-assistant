@@ -10,6 +10,7 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 import yaml
+from agent_card import mount_agent_card
 from conversations import Conversations
 from discovered_tools import turn_tools
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -130,6 +131,7 @@ def create_app(model: Model | None = None) -> FastAPI:
     refusal = guard["invalid_question_response"]
     conversations = Conversations()
     app = FastAPI()
+    mount_agent_card(app)
 
     @app.get("/readiness")
     async def readiness():
